@@ -1,0 +1,14 @@
+{
+  "name": "menueditor",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Menu editor spike — the screen and the print PDF are rendered from one display list",
+  "license": "MIT",
+  "scripts": {
+    "start": "python3 -m http.server 8791",
+    "pdf": "node test/fidelity.js"
+  },
+  "dependencies": {
+    "fflate": "0.8.2"
+  }
+}

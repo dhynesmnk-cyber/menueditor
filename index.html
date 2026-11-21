@@ -1,0 +1,650 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Menu Studio — fidelity spike</title>
+<style>
+  @font-face { font-family: 'MCrimson'; src: url('fonts/CrimsonText-Regular.ttf') format('truetype'); font-weight: 400; font-style: normal; }
+  @font-face { font-family: 'MCrimson'; src: url('fonts/CrimsonText-Bold.ttf') format('truetype'); font-weight: 700; font-style: normal; }
+  @font-face { font-family: 'MCrimson'; src: url('fonts/CrimsonText-Italic.ttf') format('truetype'); font-weight: 400; font-style: italic; }
+  @font-face { font-family: 'MLato'; src: url('fonts/Lato-Regular.ttf') format('truetype'); font-weight: 400; font-style: normal; }
+  @font-face { font-family: 'MLato'; src: url('fonts/Lato-Bold.ttf') format('truetype'); font-weight: 700; font-style: normal; }
+  @font-face { font-family: 'MLato'; src: url('fonts/Lato-Italic.ttf') format('truetype'); font-weight: 400; font-style: italic; }
+
+  :root {
+    --chrome: #1b1613;
+    --panel: #241d19;
+    --line: #3a2f28;
+    --text: #efe3d4;
+    --dim: #a08d7c;
+    --accent: #c8763f;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; height: 100%; }
+  body {
+    background: var(--chrome); color: var(--text);
+    font: 13px/1.45 ui-sans-serif, -apple-system, "Segoe UI", Roboto, sans-serif;
+    display: grid; grid-template-columns: 232px 1fr 268px; grid-template-rows: 46px 1fr;
+    grid-template-areas: "top top top" "left stage right";
+    overflow: hidden;
+  }
+  header {
+    grid-area: top; display: flex; align-items: center; gap: 14px;
+    padding: 0 14px; border-bottom: 1px solid var(--line); background: var(--panel);
+  }
+  header .brand { font-weight: 600; letter-spacing: .02em; }
+  header .brand span { color: var(--accent); }
+  header .spacer { flex: 1; }
+  .btn {
+    background: #33291f; color: var(--text); border: 1px solid var(--line);
+    padding: 6px 12px; border-radius: 6px; cursor: pointer; font: inherit;
+  }
+  .btn:hover { background: #3d3126; }
+  .btn.primary { background: var(--accent); border-color: #d98a52; color: #201509; font-weight: 600; }
+  .btn.primary:hover { background: #d98a52; }
+  .badge { font-size: 11px; color: var(--dim); font-variant-numeric: tabular-nums; }
+  aside { background: var(--panel); overflow-y: auto; }
+  aside.left { grid-area: left; border-right: 1px solid var(--line); }
+  aside.right { grid-area: right; border-left: 1px solid var(--line); }
+  .sec { padding: 12px; border-bottom: 1px solid var(--line); }
+  .sec h2 {
+    margin: 0 0 9px; font-size: 10px; letter-spacing: .14em; text-transform: uppercase;
+    color: var(--dim); font-weight: 600;
+  }
+  .row { display: flex; gap: 8px; align-items: center; margin-bottom: 7px; }
+  .row label { flex: 1; color: var(--dim); font-size: 12px; }
+  input[type=text], input[type=number], select, textarea {
+    background: #191411; color: var(--text); border: 1px solid var(--line);
+    border-radius: 5px; padding: 5px 7px; font: inherit; width: 100%;
+  }
+  input[type=number] { width: 74px; text-align: right; font-variant-numeric: tabular-nums; }
+  input[type=color] { width: 34px; height: 26px; padding: 0; border: 1px solid var(--line); border-radius: 5px; background: none; }
+  textarea { resize: vertical; min-height: 56px; }
+  .list { display: flex; flex-direction: column; gap: 2px; }
+  .list button {
+    text-align: left; background: none; border: 0; color: var(--text); padding: 5px 7px;
+    border-radius: 5px; cursor: pointer; font: inherit; display: flex; gap: 7px; align-items: baseline;
+    overflow: hidden; white-space: nowrap; text-overflow: ellipsis;
+  }
+  .list button:hover { background: #30261f; }
+  .list button.sel { background: #4a3423; box-shadow: inset 2px 0 0 var(--accent); }
+  .list .tag { font-size: 9px; letter-spacing: .1em; text-transform: uppercase; color: var(--dim); min-width: 44px; }
+
+  main { grid-area: stage; position: relative; overflow: auto; display: grid; place-items: center; padding: 26px; }
+  #sheet {
+    position: relative; background: #fff; box-shadow: 0 18px 50px #000a, 0 0 0 1px #0006;
+  }
+  #bleed { position: absolute; inset: 0; pointer-events: none; }
+  #trim { position: absolute; pointer-events: none; outline: 1px dashed #c8763f66; }
+  #layer { position: absolute; inset: 0; }
+  #layer .t {
+    position: absolute; white-space: pre; transform-origin: 0 0;
+    /* The PDF exporter places glyphs by raw font advance widths — no kerning
+       lookups, no ligature substitution. Turn both off here so the screen
+       agrees with the print to the fraction of a point instead of drifting
+       a couple of points across the line. */
+    font-kerning: none;
+    font-variant-ligatures: none;
+    font-feature-settings: "kern" 0, "liga" 0, "clig" 0, "dlig" 0, "calt" 0;
+    text-rendering: geometricPrecision;
+  }
+  #layer .dots, #layer .rule { position: absolute; }
+  #overlays { position: absolute; inset: 0; }
+  .bound {
+    position: absolute; cursor: grab; border: 1px solid transparent; border-radius: 2px;
+  }
+  .bound:hover { border-color: #c8763f88; }
+  .bound.sel { border-color: var(--accent); background: #c8763f0d; }
+  .bound.sel::after {
+    content: ''; position: absolute; left: -4px; top: -4px; width: 7px; height: 7px;
+    background: var(--accent); border-radius: 50%;
+  }
+  .hint { color: var(--dim); font-size: 11px; line-height: 1.5; }
+  .warn { color: #e0a06a; }
+</style>
+</head>
+<body>
+  <header>
+    <div class="brand">Menu <span>Studio</span></div>
+    <div class="badge" id="status">spike: renderer + PDF</div>
+    <div class="spacer"></div>
+    <div class="badge" id="fit"></div>
+    <button class="btn" id="zoomOut">−</button>
+    <div class="badge" id="zoomLabel">100%</div>
+    <button class="btn" id="zoomIn">+</button>
+    <button class="btn primary" id="export">Export PDF</button>
+  </header>
+
+  <aside class="left">
+    <div class="sec">
+      <h2>Blocks</h2>
+      <div class="list" id="blockList"></div>
+    </div>
+    <div class="sec">
+      <h2>Page</h2>
+      <div class="row"><label>Width</label><input type="number" id="pwIn" step="0.05"><span class="badge">in</span></div>
+      <div class="row"><label>Width</label><input type="number" id="pwMm" step="1"><span class="badge">mm</span></div>
+      <div class="row"><label>Height</label><input type="number" id="phIn" step="0.05"><span class="badge">in</span></div>
+      <div class="row"><label>Height</label><input type="number" id="phMm" step="1"><span class="badge">mm</span></div>
+      <div class="row"><label>Bleed</label><input type="number" id="bleedIn" step="0.0625"><span class="badge">in</span></div>
+      <div class="row"><label>Crop marks</label><input type="checkbox" id="cropMarks" style="width:auto"></div>
+      <div class="row"><label>Paper</label><input type="color" id="paper"></div>
+      <div class="row"><label>Ink</label><input type="color" id="ink"></div>
+      <div class="row"><label>Accent</label><input type="color" id="accentColor"></div>
+    </div>
+    <div class="sec">
+      <h2>Presets</h2>
+      <div class="list">
+        <button data-preset="letter">Letter · 8.5 × 11</button>
+        <button data-preset="a4">A4 · 210 × 297 mm</button>
+        <button data-preset="half">Half letter · 5.5 × 8.5</button>
+        <button data-preset="dl">Slim · 3.7 × 8.5</button>
+      </div>
+    </div>
+  </aside>
+
+  <main>
+    <div id="sheet">
+      <div id="layer"></div>
+      <div id="trim"></div>
+      <div id="overlays"></div>
+    </div>
+  </main>
+
+  <aside class="right">
+    <div class="sec" id="inspector">
+      <h2>Inspector</h2>
+      <div class="hint">Select a block on the page.</div>
+    </div>
+    <div class="sec">
+      <h2>Fidelity</h2>
+      <div class="hint" id="fidelity"></div>
+    </div>
+  </aside>
+
+<script src="vendor/jspdf.umd.min.js"></script>
+<script src="src/engine.js"></script>
+<script src="src/menu-model.js"></script>
+<script src="src/pdf.js"></script>
+<script>
+const PT = 72;
+const state = { menu: null, lay: null, sel: null, zoom: 1, zoomScale: 1 };
+
+// ---- jsPDF-backed metrics (identical code path to node) -------------------
+let metricsDoc = null;
+
+function buildMetrics(fontDefs) {
+  const doc = new jspdf.jsPDF({ unit: 'pt', format: [612, 792] });
+  fontDefs.forEach(f => {
+    doc.addFileToVFS(f.family + '-' + f.style + '.ttf', f.b64);
+    doc.addFont(f.family + '-' + f.style + '.ttf', f.family, f.style);
+  });
+  metricsDoc = doc;
+  return MenuEngine.createEngine({
+    width(text, st) {
+      metricsDoc.setFont(st.font, st.style || 'normal');
+      metricsDoc.setFontSize(st.size);
+      return metricsDoc.getTextWidth(text);
+    }
+  });
+}
+
+async function loadFonts() {
+  const out = [];
+  for (const f of MenuModel.FONTS) {
+    const res = await fetch('fonts/' + f.file);
+    const ab = await res.arrayBuffer();
+    const buf = new Uint8Array(ab);
+    let bin = '';
+    const CH = 0x8000;
+    for (let i = 0; i < buf.length; i += CH) bin += String.fromCharCode.apply(null, buf.subarray(i, i + CH));
+    out.push({ family: f.family, style: f.style, file: f.file, b64: btoa(bin) });
+
+    // seed the screen baseline model from the font's own metrics
+    const st = styleTokens(f.style);
+    ascCache.set(f.family + '|' + st.weight + '|' + st.slant, baselineRatioFromTTF(ab));
+  }
+  return out;
+}
+
+function styleTokens(style) {
+  return {
+    weight: String(style).includes('bold') ? 700 : 400,
+    slant: String(style).includes('italic') ? 'italic' : 'normal'
+  };
+}
+
+// ---- exact baseline placement for the screen -----------------------------
+// Chrome puts a glyph's baseline at (1-(A+D))/2 + A em below the top of a
+// line box of height 1em, where A/D are the font's ascent/descent. Read A and
+// D straight out of the TTF (hhea, or OS/2 typo metrics when the font asks for
+// them) — canvas fontBoundingBox does NOT report the same numbers, and being
+// wrong here shifts every line on screen against the print.
+function baselineRatioFromTTF(buf) {
+  const dv = new DataView(buf);
+  const numTables = dv.getUint16(4);
+  let head = 0, hhea = 0, os2 = 0;
+  for (let i = 0; i < numTables; i++) {
+    const o = 12 + i * 16;
+    const tag = String.fromCharCode(dv.getUint8(o), dv.getUint8(o + 1), dv.getUint8(o + 2), dv.getUint8(o + 3));
+    const off = dv.getUint32(o + 8);
+    if (tag === 'head') head = off;
+    else if (tag === 'hhea') hhea = off;
+    else if (tag === 'OS/2') os2 = off;
+  }
+  const upem = dv.getUint16(head + 18);
+  let A = dv.getInt16(hhea + 4) / upem;
+  let D = -dv.getInt16(hhea + 6) / upem;
+  if (os2) {
+    const fsSelection = dv.getUint16(os2 + 62);
+    if (fsSelection & (1 << 7)) {              // USE_TYPO_METRICS
+      A = dv.getInt16(os2 + 68) / upem;
+      D = -dv.getInt16(os2 + 70) / upem;
+    }
+  }
+  return (1 - (A + D)) / 2 + A;
+}
+
+const ascCache = new Map();
+function ascentEm(family, weight, style) {
+  const key = family + '|' + weight + '|' + style;
+  if (ascCache.has(key)) return ascCache.get(key);
+  // last-resort canvas estimate if the font file never loaded
+  const ctx = document.createElement('canvas').getContext('2d');
+  const px = 200;
+  ctx.font = `${style} ${weight} ${px}px "${family}"`;
+  const m = ctx.measureText('HxdpqgjQ');
+  const A = (m.fontBoundingBoxAscent != null ? m.fontBoundingBoxAscent : px * 0.8) / px;
+  const D = (m.fontBoundingBoxDescent != null ? m.fontBoundingBoxDescent : px * 0.2) / px;
+  const ratio = (1 - (A + D)) / 2 + A;
+  ascCache.set(key, ratio);
+  return ratio;
+}
+
+function weightOf(style) { return String(style || '').includes('bold') ? 700 : 400; }
+function slantOf(style) { return String(style || '').includes('italic') ? 'italic' : 'normal'; }
+
+// Applies a display-list text run's typography to an element at scale s.
+// Longhand properties only: the `font` shorthand would reset font-kerning and
+// font-feature-settings back to their defaults, and those are exactly what has
+// to stay off for the screen to agree with the PDF.
+function applyTextStyle(el, e, s) {
+  el.style.fontFamily = '"' + e.font + '"';
+  el.style.fontSize = (e.size * s) + 'px';
+  el.style.fontWeight = String(weightOf(e.style));
+  el.style.fontStyle = slantOf(e.style);
+  el.style.fontKerning = 'none';
+  el.style.fontVariantLigatures = 'none';
+  el.style.fontFeatureSettings = '"kern" 0, "liga" 0, "clig" 0, "dlig" 0, "calt" 0';
+  el.style.textRendering = 'geometricPrecision';
+  el.style.lineHeight = '1';
+  el.style.letterSpacing = ((e.tracking || 0) * s) + 'px';
+}
+
+// ---- render --------------------------------------------------------------
+let engine = null;
+let fontDefs = [];
+
+function relayout() {
+  state.lay = engine.layout(state.menu);
+  drawSheet();
+  drawOverlays();
+  drawList();
+  drawFidelity();
+}
+
+function drawSheet() {
+  const lay = state.lay, m = state.menu;
+  const s = state.zoomScale;
+  const bleedPx = (m.page.bleed || 0) * PT * s;
+  const sheet = document.getElementById('sheet');
+  sheet.style.width = (lay.page.w * s + bleedPx * 2) + 'px';
+  sheet.style.height = (lay.page.h * s + bleedPx * 2) + 'px';
+  sheet.style.background = m.theme.paper;
+
+  document.getElementById('trim').style.cssText =
+    'position:absolute;left:' + bleedPx + 'px;top:' + bleedPx + 'px;width:' +
+    (lay.page.w * s) + 'px;height:' + (lay.page.h * s) + 'px;outline:' +
+    (m.page.cropMarks ? '1px dashed rgba(200,118,63,.45)' : 'none');
+
+  const layer = document.getElementById('layer');
+  layer.style.cssText = 'position:absolute;left:' + bleedPx + 'px;top:' + bleedPx + 'px;width:' +
+    (lay.page.w * s) + 'px;height:' + (lay.page.h * s) + 'px';
+  layer.innerHTML = '';
+  const textNodes = [];
+  state.layZoom = s;
+
+  lay.displayList.forEach(e => {
+    if (e.k === 'text') {
+      const d = document.createElement('div');
+      d.className = 't';
+      const w = weightOf(e.style), sl = slantOf(e.style);
+      d.style.left = (e.x * s) + 'px';
+      d.style.top = ((e.baseline - ascentEm(e.font, w, sl) * e.size) * s) + 'px';
+      applyTextStyle(d, e, s);
+      d.style.color = e.color;
+      d.textContent = e.t;
+      layer.appendChild(d);
+      textNodes.push({ e, el: d });
+    } else if (e.k === 'dots') {
+      const d = document.createElement('div');
+      d.className = 'dots';
+      const r = e.r * s;
+      d.style.left = (e.x1 * s) + 'px';
+      d.style.top = ((e.y - e.r) * s) + 'px';
+      d.style.width = ((e.x2 - e.x1) * s) + 'px';
+      d.style.height = (2 * r) + 'px';
+      // round dots on the same pitch the PDF draws its circles on
+      d.style.backgroundImage = `radial-gradient(circle at 50% 50%, ${e.color} 46%, transparent 52%)`;
+      d.style.backgroundSize = `${e.gap * s}px ${2 * r}px`;
+      d.style.backgroundRepeat = 'repeat-x';
+      layer.appendChild(d);
+    } else if (e.k === 'rule') {
+      const d = document.createElement('div');
+      d.className = 'rule';
+      d.style.left = (e.x1 * s) + 'px';
+      d.style.top = ((e.y - (e.w || 0.6) / 2) * s) + 'px';
+      d.style.width = ((e.x2 - e.x1) * s) + 'px';
+      d.style.height = Math.max(1, (e.w || 0.6) * s) + 'px';
+      d.style.background = e.color;
+      layer.appendChild(d);
+    }
+  });
+
+  requestAnimationFrame(measureWidths);
+}
+
+// Measured after layout settles: does the browser put each run at the width
+// the PDF exporter assumed? This is the number that decides whether a line
+// that fits on screen also fits on press.
+function measureWidths() {
+  if (!state.lay) return;
+  const runs = state.lay.displayList.filter(e => e.k === 'text');
+  if (!runs.length) return;
+
+  // Measure at 1:1 in a detached layer, so the number reports the layout model
+  // rather than how the artboard happens to be zoomed on screen.
+  const host = document.createElement('div');
+  host.style.cssText = 'position:absolute;left:-99999px;top:0;visibility:hidden;white-space:pre;';
+  const probes = runs.map(run => {
+    const d = document.createElement('div');
+    d.style.display = 'inline-block';
+    applyTextStyle(d, run, 1);
+    d.textContent = run.t;
+    host.appendChild(d);
+    return d;
+  });
+  document.body.appendChild(host);
+
+  let maxDev = 0;
+  runs.forEach((run, i) => {
+    // Chrome adds one letter-space unit after the final glyph in its rect
+    const cssW = probes[i].getBoundingClientRect().width - (run.tracking || 0);
+    const pdfW = engine.wOf(run.t, {
+      font: run.font, style: run.style, size: run.size, tracking: run.tracking || 0
+    });
+    maxDev = Math.max(maxDev, Math.abs(cssW - pdfW));
+  });
+  host.remove();
+
+  state.widthDev = { maxDev, n: runs.length };
+  drawFidelity();
+}
+
+function drawOverlays() {
+  const s = state.zoomScale, wrap = document.getElementById('overlays');
+  wrap.innerHTML = '';
+  state.lay.bounds.forEach(b => {
+    const d = document.createElement('div');
+    d.className = 'bound' + (b.id === state.sel ? ' sel' : '');
+    d.style.left = (b.x * s) + 'px';
+    d.style.top = (b.y * s) + 'px';
+    d.style.width = (b.w * s) + 'px';
+    d.style.height = (Math.max(b.h, 10) * s) + 'px';
+    d.dataset.id = b.id;
+    d.addEventListener('pointerdown', onDragStart);
+    wrap.appendChild(d);
+  });
+}
+
+function drawList() {
+  const list = document.getElementById('blockList');
+  list.innerHTML = '';
+  state.menu.blocks.forEach(b => {
+    const btn = document.createElement('button');
+    btn.className = (b.id === state.sel ? 'sel' : '');
+    const label = b.name || b.text || b.type;
+    btn.innerHTML = '<span class="tag">' + b.type + '</span><span>' +
+      String(label).replace(/[<>&]/g, c => ({ '<': '&lt;', '>': '&gt;', '&': '&amp;' }[c])) + '</span>';
+    btn.onclick = () => select(b.id);
+    list.appendChild(btn);
+  });
+}
+
+function drawFidelity() {
+  const m = state.menu, lay = state.lay;
+  const contentIn = lay.extent / PT;
+  const slack = m.page.h - contentIn;
+  const el = document.getElementById('fidelity');
+  const dev = state.widthDev || { maxDev: 0, n: 0 };
+  const runs = lay.displayList.filter(e => e.k === 'text').length;
+  el.innerHTML =
+    'Page <b>' + m.page.w + ' × ' + m.page.h + ' in</b> (' +
+    Math.round(m.page.w * 25.4) + ' × ' + Math.round(m.page.h * 25.4) + ' mm)<br>' +
+    'Live area ends at <b>' + contentIn.toFixed(2) + ' in</b><br>' +
+    (slack < 0
+      ? '<span class="warn">Overflow by ' + (-slack).toFixed(2) + ' in</span>'
+      : 'Bottom margin <b>' + slack.toFixed(2) + ' in</b>') +
+    '<br><br>' + runs + ' text runs, ' +
+    lay.displayList.filter(e => e.k === 'dots').length + ' leader runs<br>' +
+    'Screen ↔ PDF width agreement: <b>' +
+    (dev.maxDev < 0.05 ? 'exact' : dev.maxDev.toFixed(2) + ' pt') + '</b>' +
+    ' (max over ' + dev.n + ' runs)<br>' +
+    '<span class="hint">Screen and PDF are drawn from the same display list; ' +
+    'the browser is never allowed to wrap text.</span>';
+  document.getElementById('fit').textContent = '';
+}
+
+// ---- interaction ---------------------------------------------------------
+function onDragStart(ev) {
+  ev.preventDefault();
+  const id = ev.currentTarget.dataset.id;
+  select(id);
+  const s = state.zoomScale;
+  const b = state.menu.blocks.find(x => x.id === id);
+  const start = { px: ev.clientX, py: ev.clientY, x: b.x, y: b.y };
+  const move = e => {
+    b.x = +(start.x + (e.clientX - start.px) / (s * PT)).toFixed(3);
+    b.y = +(start.y + (e.clientY - start.py) / (s * PT)).toFixed(3);
+    relayout();
+  };
+  const up = () => {
+    window.removeEventListener('pointermove', move);
+    window.removeEventListener('pointerup', up);
+  };
+  window.addEventListener('pointermove', move);
+  window.addEventListener('pointerup', up);
+}
+
+function select(id) {
+  state.sel = id;
+  drawOverlays();
+  drawList();
+  drawInspector();
+}
+
+function drawInspector() {
+  const box = document.getElementById('inspector');
+  const b = state.menu.blocks.find(x => x.id === state.sel);
+  box.innerHTML = '<h2>Inspector</h2>';
+  if (!b) {
+    box.insertAdjacentHTML('beforeend', '<div class="hint">Select a block on the page.</div>');
+    return;
+  }
+  const field = (label, node) => {
+    const row = document.createElement('div');
+    row.className = 'row';
+    const l = document.createElement('label');
+    l.textContent = label;
+    row.appendChild(l);
+    row.appendChild(node);
+    box.appendChild(row);
+    return node;
+  };
+  const mk = (type, val, onIn) => {
+    const el = document.createElement('input');
+    el.type = type;
+    el.value = val;
+    el.addEventListener('input', () => onIn(el.value));
+    return el;
+  };
+
+  box.insertAdjacentHTML('beforeend', '<div class="hint" style="margin-bottom:9px">' + b.type + ' · ' + b.id + '</div>');
+
+  if (b.type === 'item') {
+    field('Name', mk('text', b.name, v => { b.name = v; relayout(); }));
+    const ta = document.createElement('textarea');
+    ta.value = b.desc || '';
+    ta.addEventListener('input', () => { b.desc = ta.value; relayout(); });
+    box.appendChild(ta);
+    field('Price', mk('text', b.price, v => { b.price = v; relayout(); }));
+    field('Tags', mk('text', (b.tags || []).join(', '), v => {
+      b.tags = v.split(',').map(t => t.trim()).filter(Boolean);
+      relayout();
+    }));
+  } else if (b.type !== 'rule') {
+    const ta = document.createElement('textarea');
+    ta.value = b.text || '';
+    ta.addEventListener('input', () => { b.text = ta.value; relayout(); });
+    box.appendChild(ta);
+  }
+
+  field('Size', mk('number', b.size || 0, v => { b.size = +v; relayout(); }));
+  const sel = document.createElement('select');
+  ['left', 'center', 'right'].forEach(a => {
+    const o = document.createElement('option');
+    o.value = a; o.textContent = a;
+    if ((b.align || 'left') === a) o.selected = true;
+    sel.appendChild(o);
+  });
+  sel.onchange = () => { b.align = sel.value; relayout(); };
+  field('Align', sel);
+  field('Color', mk('color', b.color || state.menu.theme.ink, v => { b.color = v; relayout(); }));
+  field('X (in)', mk('number', b.x.toFixed(2), v => { b.x = +v; relayout(); }));
+  field('Y (in)', mk('number', b.y.toFixed(2), v => { b.y = +v; relayout(); }));
+  field('W (in)', mk('number', b.w.toFixed(2), v => { b.w = +v; relayout(); }));
+}
+
+function zoomPercentLabel() {
+  document.getElementById('zoomLabel').textContent = Math.round(state.zoomScale * 100) + '%';
+}
+
+function fitZoom() {
+  const m = state.menu, main = document.querySelector('main');
+  const availW = main.clientWidth - 56, availH = main.clientHeight - 56;
+  const bleed = (m.page.bleed || 0);
+  const wPt = (m.page.w + bleed * 2) * PT;
+  const hPt = (m.page.h + bleed * 2) * PT;
+  state.zoomScale = Math.max(0.1, Math.min(availW / wPt, availH / hPt));
+  state.zoom = state.zoomScale;
+  zoomPercentLabel();
+}
+
+function applyZoom(z) {
+  state.zoomScale = Math.max(0.15, Math.min(3, z));
+  zoomPercentLabel();
+  drawSheet(); drawOverlays();
+}
+
+// ---- page controls -------------------------------------------------------
+const IN_MM = 25.4;
+function bindPage() {
+  const m = state.menu;
+  const sync = () => {
+    document.getElementById('pwIn').value = m.page.w.toFixed(2);
+    document.getElementById('phIn').value = m.page.h.toFixed(2);
+    document.getElementById('pwMm').value = Math.round(m.page.w * IN_MM);
+    document.getElementById('phMm').value = Math.round(m.page.h * IN_MM);
+    document.getElementById('bleedIn').value = (m.page.bleed || 0);
+    document.getElementById('cropMarks').checked = !!m.page.cropMarks;
+    document.getElementById('paper').value = m.theme.paper;
+    document.getElementById('ink').value = m.theme.ink;
+    document.getElementById('accentColor').value = m.theme.accent;
+  };
+  const setW = v => { if (v > 1 && v < 40) { m.page.w = +v; sync(); fitZoom(); relayout(); } };
+  const setH = v => { if (v > 1 && v < 40) { m.page.h = +v; sync(); fitZoom(); relayout(); } };
+  document.getElementById('pwIn').oninput = e => setW(+e.target.value);
+  document.getElementById('phIn').oninput = e => setH(+e.target.value);
+  document.getElementById('pwMm').oninput = e => setW(+e.target.value / IN_MM);
+  document.getElementById('phMm').oninput = e => setH(+e.target.value / IN_MM);
+  document.getElementById('bleedIn').oninput = e => {
+    m.page.bleed = Math.max(0, Math.min(0.5, +e.target.value)); relayout();
+  };
+  document.getElementById('cropMarks').onchange = e => { m.page.cropMarks = e.target.checked; relayout(); };
+  document.getElementById('paper').oninput = e => { m.theme.paper = e.target.value; relayout(); };
+  document.getElementById('ink').oninput = e => { m.theme.ink = e.target.value; relayout(); };
+  document.getElementById('accentColor').oninput = e => { m.theme.accent = e.target.value; relayout(); };
+  sync();
+}
+
+const PRESETS = {
+  letter: [8.5, 11],
+  a4: [210 / IN_MM, 297 / IN_MM],
+  half: [5.5, 8.5],
+  dl: [3.7, 8.5]
+};
+document.querySelectorAll('[data-preset]').forEach(btn => {
+  btn.onclick = () => {
+    const [w, h] = PRESETS[btn.dataset.preset];
+    state.menu.page.w = +w.toFixed(4);
+    state.menu.page.h = +h.toFixed(4);
+    bindPage(); fitZoom(); relayout();
+  };
+});
+
+document.getElementById('zoomIn').onclick = () => applyZoom(state.zoomScale * 1.15);
+document.getElementById('zoomOut').onclick = () => applyZoom(state.zoomScale / 1.15);
+window.addEventListener('resize', () => { fitZoom(); drawSheet(); drawOverlays(); });
+
+document.addEventListener('keydown', e => {
+  const b = state.menu && state.menu.blocks.find(x => x.id === state.sel);
+  if (!b || e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA') return;
+  const step = (e.shiftKey ? 10 : 1) / PT;
+  if (e.key === 'ArrowUp') { b.y -= step; relayout(); e.preventDefault(); }
+  if (e.key === 'ArrowDown') { b.y += step; relayout(); e.preventDefault(); }
+  if (e.key === 'ArrowLeft') { b.x -= step; relayout(); e.preventDefault(); }
+  if (e.key === 'ArrowRight') { b.x += step; relayout(); e.preventDefault(); }
+});
+
+// ---- export --------------------------------------------------------------
+document.getElementById('export').onclick = () => {
+  const pdf = MenuPDF.renderPDF(jspdf.jsPDF, state.menu, state.lay, fontDefs);
+  pdf.save('menu.pdf');
+  document.getElementById('status').textContent = 'exported ' + new Date().toLocaleTimeString();
+};
+
+// ---- boot ----------------------------------------------------------------
+(async function boot() {
+  try {
+    fontDefs = await loadFonts();
+    engine = buildMetrics(fontDefs);
+    // fonts.ready can sit pending forever if one font request stalls; the app
+    // is usable with system fallbacks, so don't make boot hostage to it
+    await Promise.race([
+      document.fonts.ready,
+      new Promise(r => setTimeout(r, 1500))
+    ]);
+    state.menu = MenuModel.buildMenu(engine);
+    fitZoom();
+    relayout();
+    document.getElementById('status').textContent = 'ready · ' + state.menu.blocks.length + ' blocks';
+    window.__state = state;   // for the screenshot harness
+  } catch (err) {
+    document.getElementById('status').textContent = 'ERR: ' + err.message;
+    console.error(err);
+    window.__bootError = String(err && err.stack || err);
+  }
+})();
+</script>
+</body>
+</html>
