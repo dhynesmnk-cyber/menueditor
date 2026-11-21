@@ -29,6 +29,7 @@ No build step, no backend, no accounts. Fonts and jsPDF are vendored.
 
 ## Verify it
 
+    npm install                                        # fflate, needed by jsPDF's node build
     node test/fidelity.js                              # model -> display list -> PDF
     ~/.hermes/cache/scratch/pdfenv/bin/python -I test/verify.py   # glyph-level PDF check
 
@@ -78,6 +79,16 @@ Screen-vs-PDF comparison (needs a browser capture in `out/screen.png`):
 Cosmetic residual: screen leader dots are CSS circles and render a shade
 squarer than the PDF's vector circles. Same pitch, same start and stop.
 
+## Fonts and licensing
+
+The demo uses **Crimson Text** (display) and **Lato** (body), both SIL OFL 1.1,
+so the repo is redistributable. The spike was originally built against the
+Monotype Garamond shipped with Chrome OS; it was replaced because that face
+cannot be redistributed in a public repo. Swapping faces means editing
+`FONTS` in `src/menu-model.js` and the matching `@font-face` block in
+`index.html` — nothing in the engine or exporter is font-specific, and the
+baseline ratio is re-derived from whatever TTF is loaded.
+
 ## What is not built yet
 
 - **Import** (step 2): paste-and-parse, plus PDF/DOCX/photo extraction.
@@ -92,6 +103,6 @@ squarer than the PDF's vector circles. Same pitch, same start and stop.
     src/engine.js         layout engine (node + browser, UMD)
     src/pdf.js            PDF exporter — dumb consumer of the display list
     src/menu-model.js     document model + demo menu (shared by app and tests)
-    fonts/                Garamond (regular/bold/italic), Lato (regular/bold/italic)
+    fonts/                Crimson Text + Lato, both SIL OFL 1.1 (see fonts/OFL-*.txt)
     vendor/               jsPDF 2.5.2 (umd + node)
     test/                 fidelity, verify, compare, vshift, bbox, zoom, fontmetrics
