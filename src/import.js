@@ -37,6 +37,13 @@
   var NOTE_RE = /^[*†‡(\[]|allerg|please note|ask (?:us|your)|consuming raw|vegan option/i;
   var CONTACT_RE = /(?:https?:\/\/|www\.|\b[\w.+-]+@[\w-]+\.[a-z]{2,}\b|\(\d{3}\)\s*\d{3}[-.\s]\d{4}|\+?\d[\d\s().-]{8,}\d)/i;
 
+  // Markers a menu is allowed to put on their own line after a dish.
+  var DIET_TOKENS = {
+    V: 1, VG: 1, VE: 1, VEG: 1, VGN: 1, VV: 1,
+    GF: 1, DF: 1, NF: 1, EF: 1, SF: 1, MF: 1,
+    N: 1, NN: 1, S: 1, SP: 1, HOT: 1, SPICY: 1, RAW: 1, CONTAINS: 0
+  };
+
   function isAllCaps(s) {
     return /[A-Z]/.test(s) && !/[a-z]/.test(s);
   }
@@ -143,7 +150,7 @@
     var notes = [];
     var warnings = [];
     var headerLines = [];
-    var headerOpen = true;
+    var pendingSection = null;
     var cur = null;
     var lastItem = null;
 
@@ -176,8 +183,8 @@
           warn('error', 'A price with no dish name was ignored.', trimmed);
           continue;
         }
-        if (!cur) ensureSection(opts.defaultSection || 'Menu');
-        headerOpen = false;
+        if (pendingSection) { ensureSection(pendingSection); pendingSection = null; }
+        else if (!cur) ensureSection(opts.defaultSection || 'Menu');
         var price = normPrice(priced.price);
         var prev = cur.items[cur.items.length - 1];
         if (prev && prev.name.toLowerCase() === name.toLowerCase()) {
@@ -200,15 +207,25 @@
 
       var score = sectionScore(trimmed);
 
-      // everything before the first section/dish is the menu's own header
-      if (headerOpen && !sections.length) {
-        if (score >= 3) {
-          headerOpen = false;
-          ensureSection(cleanName(trimmed));
-          lastItem = null;
+      // A line of nothing but dietary markers belongs to the dish above it —
+      // this is how tags arrive from OCR, where they sit on their own line.
+      if (lastItem && trimmed.length <= 14) {
+        var toks = trimmed.split(/\s*[·\/,\s]\s*/).filter(Boolean);
+        if (toks.length && toks.length <= 4 && toks.every(function (t) { return DIET_TOKENS[t.toUpperCase()]; })) {
+          lastItem.tags = (lastItem.tags || []).concat(toks.map(function (t) { return t.toUpperCase(); }));
           continue;
         }
-        headerLines.push(cleanName(trimmed));
+      }
+
+      // Before the first dish, an all-caps line may be a kicker rather than a
+      // section — hold it until we see whether a dish actually follows.
+      if (!sections.length) {
+        if (score >= 3) {
+          if (pendingSection) headerLines.push(pendingSection);
+          pendingSection = cleanName(trimmed);
+        } else {
+          headerLines.push(cleanName(trimmed));
+        }
         continue;
       }
 
@@ -240,6 +257,8 @@
       warn('warn', 'Line did not look like a dish, a section or a note — not imported.', trimmed);
     }
 
+    if (pendingSection) headerLines.push(pendingSection);
+
     var assumed = [];
     sections.forEach(function (s) {
       s.items.forEach(function (it) {
@@ -256,9 +275,16 @@
 
     var itemCount = sections.reduce(function (n, s) { return n + s.items.length; }, 0);
 
+    var capsLines = headerLines.filter(function (l) { return isAllCaps(l); });
+    var mixedLines = headerLines.filter(function (l) { return !isAllCaps(l); });
+    var titleOut = mixedLines.length ? mixedLines.shift() : (capsLines.shift() || null);
+    var subtitleOut = mixedLines.length ? mixedLines.join('  ·  ') : null;
+    var kickerOut = capsLines.length ? capsLines.join(' · ') : null;
+
     return {
-      title: headerLines.length ? headerLines[0] : null,
-      subtitle: headerLines.length > 1 ? headerLines.slice(1).join('  ·  ') : null,
+      kicker: kickerOut,
+      title: titleOut || null,
+      subtitle: subtitleOut,
       sections: sections,
       notes: notes,
       warnings: warnings,

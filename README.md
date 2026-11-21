@@ -59,18 +59,71 @@ dishes, unusually high prices and lines that could not be classified. **Apply**
 is disabled until something parsed, and it keeps your existing page size and
 palette — an import never resets the design.
 
+## Importing a real menu file
+
+`Upload PDF / PNG` in the import dialog. The two file types do different jobs,
+because they carry different information:
+
+**PDF → copy.** A born-digital PDF contains the actual text with actual
+coordinates, so nothing is guessed. `src/layout.js` rebuilds the reading order
+from the word boxes: words into lines, lines split at wide gaps into segments,
+segments clustered into columns by x-overlap. It also rejoins what extractors
+shatter — letter-spaced headings arrive one character per box (`T O   B E G I N`),
+and right-aligned prices land in their own x-cluster where a naive reader treats
+them as a second column and detaches every price from its dish. On a test menu
+this takes the PDF from 0 recovered dishes to **8 dishes in 3 sections with 8
+descriptions**.
+
+**PNG → design.** An image gives you the palette, the page shape and the
+margins, so the editor can start from a reference's proportions and colours, with
+the image available as a tracing underlay. What it does not give you is the copy.
+
+### Why PNG does not do copy (yet)
+
+Whole-page OCR on real designed menus was measured, not assumed. Tesseract at
+47–67% confidence reads *across* columns:
+
+    SPRITZ ROYALE 18 HORS D'OEUVRES BRUNCH Almond Crotssont 7
+    Fish Soup £800 Bestraot Carpaccio £600 Chicken Liars so 0
+
+On the three reference menus, whole-page OCR yielded 13 / 18 / 1 "dishes", most
+of them garbage concatenations, and the parser could salvage nothing usable. The
+column-aware path is built (`layout.js` is the same code that fixes the PDF), but
+it needs a stronger OCR engine than tesseract before the text is worth showing a
+restaurant. Ghosted watermarks (Salt Room) and photo borders (Ralph & Finns) both
+make it worse. So the honest split is: PDF or paste for copy, image for design.
+
+### What the design read actually extracts
+
+| | |
+|---|---|
+| paper / ink | exact-colour mode of the page frame, darkest slice for ink |
+| accents | saturated pixels binned by hue (exact-colour modes miss thin red rules) |
+| page | nearest standard sheet by aspect, else the exact aspect at 11in long side |
+| margins | 0.4-percentile ink edges, so a stray photo pixel cannot claim the trim |
+| artwork border | edge-band variance vs the page interior (full-bleed florals) |
+
+Verified on your three references: Ralph & Finns reads cream `#F6F3EC`, rust
+`#A04D3F`, ochre, A5 portrait, artwork border yes; The Salt Room reads slate
+`#596D7B`; Pastis reads `11 × 7.4in` custom landscape with navy `#416077` and
+pink `#D691A3`. Column *count* is deliberately not guessed from pixels — rules,
+boxes and watermarks fake gutters — it comes from word boxes instead.
+
 ## Verify it
 
     npm install                    # fflate, needed by jsPDF's node build
-    npm test                       # parser corpus + end-to-end import + PDF
+    npm test                       # parser corpus, design reads, e2e import, PDF
 
 Individually:
 
     node test/parse.js             # 44 assertions over 9 real menu shapes
+    node test/design.js            # palette/page/margins on the 3 reference menus
+    node test/layout-test.js       # word boxes -> columns -> copy (PDF; OCR with a worker)
     node test/import-e2e.js        # paste -> blocks -> layout -> out/imported.pdf
     node test/fidelity.js          # demo menu -> out/menu.pdf
     python3 test/syntax.py         # inline script parses, ids and assets resolve
     .../python -I test/verify.py [pdf] [displaylist.json]   # glyph-level PDF check
+    .../python -I test/dump-fixtures.py <menu.png ...>      # regenerate design fixtures
 
 `fidelity.js` / `import-e2e.js` write a display list containing the expected x
 position of **every glyph**; `verify.py` reopens the PDF with pymupdf and asserts
@@ -132,21 +185,25 @@ font-specific, and the baseline ratio is re-derived from whatever TTF loads.
 
 ## What is not built yet
 
-- **File import**: `.docx`/`.pdf`/photo. Text extraction needs pdf.js (and
-  tesseract for photos) — the paste path proves the parser first.
+- **Copy from a photo.** The layout reconstruction is done and tested; it needs a
+  stronger OCR engine than tesseract to be worth showing a restaurant.
 - **Section groups that reflow internally** when items are added, while the
   group's box stays where it was dropped. Today blocks are individually placed.
 - Multi-page flow when a menu outgrows one sheet (the importer reports overflow
   but does not paginate).
 - Font library + upload-your-own, web-link export, project file save/load.
+- The file-upload UI is wired and statically checked, but was not clicked through
+  in a browser: Chromium would not start on the build machine.
 
 ## Files
 
     index.html            editor UI, import review, screen renderer, fidelity readout
     src/engine.js         layout engine (node + browser, UMD)
     src/import.js         menu-text parser (node + browser, UMD)
+    src/layout.js         word boxes -> lines -> columns -> text
+    src/design.js         palette / page / margins read from an image
     src/menu-model.js     document model, demo menu, parsed -> blocks builder
     src/pdf.js            PDF exporter — dumb consumer of the display list
     fonts/                Crimson Text + Lato, both SIL OFL 1.1 (see fonts/OFL-*.txt)
-    vendor/               jsPDF 2.5.2 (umd + node)
-    test/                 parse corpus, import e2e, fidelity, verify, syntax, visual diffs
+    vendor/               jsPDF 2.5.2, pdf.js 3.11 (umd + node + worker)
+    test/                 parse corpus, design reads, layout, e2e, fidelity, syntax, fixtures

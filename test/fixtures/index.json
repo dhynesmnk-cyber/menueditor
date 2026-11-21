@@ -1,0 +1,32 @@
+[
+ {
+  "name": "menu-example-2-1",
+  "file": "menu example 2 (1).png",
+  "w": 240,
+  "h": 341,
+  "source_size": [
+   744,
+   1056
+  ]
+ },
+ {
+  "name": "menu-example-3-1",
+  "file": "menu example 3 (1).png",
+  "w": 240,
+  "h": 340,
+  "source_size": [
+   595,
+   842
+  ]
+ },
+ {
+  "name": "pastis-menu",
+  "file": "pastis menu.png",
+  "w": 240,
+  "h": 161,
+  "source_size": [
+   1360,
+   910
+  ]
+ }
+]

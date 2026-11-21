@@ -180,6 +180,7 @@
 
   <main>
     <div id="sheet">
+      <img id="refImg" alt="" style="display:none;position:absolute;inset:0;width:100%;height:100%;object-fit:fill;pointer-events:none;opacity:.28;mix-blend-mode:multiply">
       <div id="layer"></div>
       <div id="trim"></div>
       <div id="overlays"></div>
@@ -204,13 +205,20 @@
       <textarea id="importText" spellcheck="false"
         placeholder="Paste your menu here — sections, dishes, prices and descriptions.&#10;&#10;e.g.&#10;TO BEGIN&#10;Charred Sourdough ....... 9&#10;Cultured butter, smoked salt"></textarea>
       <div class="preview" id="importPreview">
+        <div id="designPanel"></div>
         <div class="hint">Paste text on the left, then Parse. Nothing is applied to the canvas until you say so.</div>
       </div>
     </div>
-    <div class="modal-actions">
-      <button class="btn" id="importExample">Load example</button>
+    <div class="modal-actions" style="border-top:0;padding-bottom:0">
+      <label class="btn" for="importFile">Upload PDF / PNG</label>
+      <input type="file" id="importFile" accept=".pdf,.png,.jpg,.jpeg" hidden>
+      <span class="hint" id="importFileName"></span>
       <div class="spacer"></div>
+      <button class="btn" id="importExample">Load example</button>
+    </div>
+    <div class="modal-actions">
       <button class="btn" id="importCancel">Cancel</button>
+      <div class="spacer"></div>
       <button class="btn" id="importParse">Parse</button>
       <button class="btn primary" id="importApply" disabled>Apply to canvas</button>
     </div>
@@ -218,9 +226,12 @@
 </div>
 
 <script src="vendor/jspdf.umd.min.js"></script>
+<script src="vendor/pdf.min.js"></script>
 <script src="src/engine.js"></script>
 <script src="src/menu-model.js"></script>
 <script src="src/import.js"></script>
+<script src="src/layout.js"></script>
+<script src="src/design.js"></script>
 <script src="src/pdf.js"></script>
 <script>
 const PT = 72;
@@ -803,6 +814,144 @@ function applyImport() {
   document.getElementById('status').textContent =
     'imported ' + pending.stats.items + ' dishes' +
     (res.overflowIn > 0.01 ? ' · overflows by ' + res.overflowIn.toFixed(2) + ' in' : '');
+}
+
+// ---- file import: PDF for copy, PNG for design ---------------------------
+pdfjsLib.GlobalWorkerOptions.workerSrc = 'vendor/pdf.worker.min.js';
+
+let designRef = null;
+
+document.getElementById('importFile').onchange = async (ev) => {
+  const file = ev.target.files && ev.target.files[0];
+  if (!file) return;
+  document.getElementById('importFileName').textContent = file.name;
+  const panel = document.getElementById('designPanel');
+  try {
+    if (/\.pdf$/i.test(file.name) || file.type === 'application/pdf') {
+      await importPdf(file);
+    } else {
+      await importImage(file);
+    }
+  } catch (err) {
+    panel.innerHTML = '<div class="warnline error">Could not read that file: ' +
+      (err && err.message ? err.message : err) + '</div>';
+  }
+};
+
+// PDFs carry real text with real coordinates, so the copy can be lifted
+// exactly — no OCR, no guessing. The words still have to be put back into
+// columns and lines, which is what MenuLayout does.
+async function importPdf(file) {
+  const buf = await file.arrayBuffer();
+  const doc = await pdfjsLib.getDocument({ data: new Uint8Array(buf) }).promise;
+  const words = [];
+  const pageHeight = [];
+  for (let p = 1; p <= doc.numPages; p++) {
+    const page = await doc.getPage(p);
+    const vp = page.getViewport({ scale: 1 });
+    pageHeight.push(vp.height);
+    const tc = await page.getTextContent();
+    const offset = (p - 1) * 1e5;
+    tc.items.forEach(it => {
+      if (!it.str || !it.str.trim()) return;
+      const h = it.height || Math.abs(it.transform[3]) || 10;
+      const yTop = vp.height - it.transform[5] - h + offset;
+      const parts = it.str.split(/\s+/).filter(Boolean);
+      const total = it.str.length || 1;
+      let cursor = 0;
+      parts.forEach(word => {
+        const idx = it.str.indexOf(word, cursor);
+        const lead = idx < 0 ? cursor : idx;
+        const x = it.transform[4] + (lead / total) * (it.width || 0);
+        const w = Math.max(1, (word.length / total) * (it.width || h * word.length * 0.5));
+        words.push({ text: word, x, y: yTop, w, h });
+        cursor = lead + word.length;
+      });
+    });
+  }
+
+  const laid = MenuLayout.reconstruct(words);
+  pending = MenuImport.parse(laid.text);
+  renderPreview();
+
+  const panel = document.getElementById('designPanel');
+  panel.innerHTML = '<h4>Read from PDF</h4><div class="hint">' +
+    words.length + ' words · ' + laid.stats.lines + ' lines · ' +
+    laid.stats.columns + ' column(s) detected · ' + doc.numPages + ' page(s). ' +
+    'Prices and descriptions are rebuilt from their positions.</div>';
+}
+
+// Images give the design, not the copy: measured OCR on real menus lands at
+// 47-67% confidence and garbles names, so text from a photo is not offered.
+async function importImage(file) {
+  const bmp = await createImageBitmap(file);
+  const scale = Math.min(1, 1000 / Math.max(bmp.width, bmp.height));
+  const canvas = document.createElement('canvas');
+  canvas.width = Math.max(1, Math.round(bmp.width * scale));
+  canvas.height = Math.max(1, Math.round(bmp.height * scale));
+  const ctx = canvas.getContext('2d', { willReadFrequently: true });
+  ctx.drawImage(bmp, 0, 0, canvas.width, canvas.height);
+  const img = ctx.getImageData(0, 0, canvas.width, canvas.height);
+  const read = MenuDesign.analyse(canvas.width, canvas.height, img.data, { channels: 4 });
+  designRef = { read: read, url: URL.createObjectURL(file) };
+  renderDesignPanel();
+}
+
+function renderDesignPanel() {
+  const panel = document.getElementById('designPanel');
+  if (!designRef) return;
+  const read = designRef.read;
+  const t = MenuDesign.toTheme(read);
+  const pct = v => Math.round(v * 100) + '%';
+  const swatch = c => '<span style="display:inline-block;width:15px;height:15px;border-radius:3px;' +
+    'margin-right:5px;border:1px solid #0004;background:' + c + '"></span>';
+
+  panel.innerHTML =
+    '<h4>Design read</h4>' +
+    '<div class="hint">' + read.px.w + '×' + read.px.h + ' px · aspect ' + read.aspect +
+      ' · ' + (read.hasArtworkBorder ? 'artwork runs to the edge' : 'plain edge') + '</div>' +
+    '<div class="summary">Page <b>' + read.page.name + '</b> — ' + read.page.w + '×' + read.page.h + ' in</div>' +
+    '<div class="row"><label>Swatches</label><span style="font-size:10px;color:var(--dim)">' +
+      swatch(t.palette.paper) + t.palette.paper + ' ' +
+      swatch(t.palette.ink) + t.palette.ink + ' ' +
+      swatch(t.palette.accent) + t.palette.accent +
+      (read.accents.length > 1 ? ' ' + read.accents.slice(1).map(swatch).join('') : '') +
+    '</span></div>' +
+    '<div class="row"><label>Margins</label><span class="hint">l ' + pct(read.margins.left) +
+      ' · r ' + pct(read.margins.right) + ' · t ' + pct(read.margins.top) +
+      ' · b ' + pct(read.margins.bottom) + '</span></div>' +
+    '<div class="row"><label>Ink coverage</label><span class="hint">' +
+      (read.inkCoverage * 100).toFixed(1) + '%</span></div>' +
+    '<div class="row"><button class="btn" id="designApply">Use as theme</button>' +
+      '<button class="btn" id="designRefBtn">Underlay</button></div>' +
+    '<div class="warnline info">Copy from a photo needs OCR, which measured 47–67% confidence ' +
+      'on real menus and garbled dish names — so this reads the design only. Upload a PDF ' +
+      'for the text.</div>';
+
+  document.getElementById('designApply').onclick = () => applyDesign(t);
+  document.getElementById('designRefBtn').onclick = () => {
+    const img = document.getElementById('refImg');
+    img.src = designRef.url;
+    img.style.display = '';
+    document.getElementById('status').textContent = 'reference underlay on';
+  };
+}
+
+function applyDesign(t) {
+  Object.assign(state.menu.theme, t.palette);
+  state.menu.page.w = t.page.w;
+  state.menu.page.h = t.page.h;
+  if (pending && pending.stats.items) {
+    const res = MenuModel.buildMenuFromParsed(engine, pending, {
+      page: state.menu.page, theme: state.menu.theme,
+      colX: t.column.x, colW: t.column.w
+    });
+    state.menu = res.menu;
+  }
+  bindPage();
+  fitZoom();
+  relayout();
+  document.getElementById('status').textContent = 'theme from image · ' + t.page.name;
 }
 
 // ---- boot ----------------------------------------------------------------
