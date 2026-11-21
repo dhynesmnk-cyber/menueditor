@@ -232,6 +232,7 @@
 <script src="src/import.js"></script>
 <script src="src/layout.js"></script>
 <script src="src/design.js"></script>
+<script src="src/planner.js"></script>
 <script src="src/pdf.js"></script>
 <script>
 const PT = 72;
@@ -809,8 +810,19 @@ function renderPreview() {
 
 function applyImport() {
   if (!pending || !pending.stats.items) return;
+  const page = state.menu.page;
+  // the reference's own grid decides the template; without a reference the
+  // planner falls back to a single column and says whether that fits
+  const plan = MenuPlanner.plan({
+    parsed: pending,
+    page: page,
+    reference: designRef && designRef.columns ? { columns: designRef.columns } : null,
+    top: 1.05,
+    bottom: page.h - 0.8
+  });
   const res = MenuModel.buildMenuFromParsed(engine, pending, {
-    page: state.menu.page, theme: state.menu.theme
+    page: page, theme: state.menu.theme, plan: plan,
+    top: 1.05, bottom: page.h - 0.8
   });
   state.menu = res.menu;
   state.sel = null;
@@ -878,6 +890,8 @@ async function importPdf(file) {
 
   const laid = MenuLayout.reconstruct(words);
   pending = MenuImport.parse(laid.text);
+  designRef = designRef || {};
+  designRef.columns = laid.columns;      // the reference's grid, for the planner
   renderPreview();
 
   const panel = document.getElementById('designPanel');
@@ -937,6 +951,7 @@ async function tryOcr(file) {
 
   const laid = MenuLayout.reconstruct(words);
   pending = MenuImport.parse(laid.text);
+  if (designRef) designRef.columns = laid.columns;   // grid comes from the boxes
   renderPreview();
 
   panel.insertAdjacentHTML('beforeend',
@@ -991,9 +1006,16 @@ function applyDesign(t) {
   state.menu.page.w = t.page.w;
   state.menu.page.h = t.page.h;
   if (pending && pending.stats.items) {
+    const plan = MenuPlanner.plan({
+      parsed: pending,
+      page: state.menu.page,
+      reference: designRef && designRef.columns ? { columns: designRef.columns } : null,
+      top: 1.05,
+      bottom: state.menu.page.h - 0.8
+    });
     const res = MenuModel.buildMenuFromParsed(engine, pending, {
-      page: state.menu.page, theme: state.menu.theme,
-      colX: t.column.x, colW: t.column.w
+      page: state.menu.page, theme: state.menu.theme, plan: plan,
+      top: 1.05, bottom: state.menu.page.h - 0.8
     });
     state.menu = res.menu;
   }

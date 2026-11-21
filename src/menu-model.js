@@ -165,9 +165,64 @@
       spec.id = 'b' + blocks.length;
       spec.x = spec.x == null ? colX : spec.x;
       spec.w = spec.w == null ? colW : spec.w;
-      spec.y = 0;
+      if (spec.y == null) spec.y = 0;
       blocks.push(spec);
       gaps.push({ gap: gapAfter || 0, weight: weight || 1 });
+    }
+
+    // ---- a plan from src/planner.js means a multi-column page: the reference's
+    // grid decides where each section sits. Without a plan this stays the old
+    // one-column stack, so nothing regresses for single-column menus.
+    if (opts.plan) {
+      var plan = opts.plan;
+      var ts = plan.typeScale || 1;
+      var cols = plan.columns;
+      var left = Math.min.apply(null, cols.map(function (c) { return c.x; }));
+      var right = Math.max.apply(null, cols.map(function (c) { return c.x + c.w; }));
+      var headY = 0.55;
+
+      if (parsed.title) {
+        push({ type: 'title', text: parsed.title, size: 40 * ts, tracking: 1.2,
+               x: left, w: right - left, y: headY }, 0, 1);
+      }
+      if (parsed.subtitle) {
+        push({ type: 'subtitle', text: parsed.subtitle, size: 9.2 * ts, tracking: 1.2,
+               x: left, w: right - left, y: headY + 1.15 * ts }, 0, 1);
+      }
+
+      var startY = parsed.title ? headY + 1.85 * ts : (parsed.subtitle ? headY + 0.9 * ts : 1.0);
+      var cursor = cols.map(function () { return startY; });
+
+      plan.sections.forEach(function (ps) {
+        var ci = Math.min(ps.col, cols.length - 1);
+        var x = cols[ci].x, w = cols[ci].w;
+        var y = cursor[ci];
+
+        push({ type: 'section', text: ps.title, size: 8.2 * ts, tracking: 2.2, x: x, w: w, y: y }, 0, 1);
+        y += engine.layoutBlock(blocks[blocks.length - 1], th).h / 72 + 0.10 * ts;
+
+        ps.items.forEach(function (it) {
+          push({
+            type: 'item', name: it.name, desc: it.desc || '', price: it.price,
+            tags: it.tags || [], size: 12.4 * ts, descSize: 8.2 * ts, x: x, w: w, y: y
+          }, 0, 1);
+          y += engine.layoutBlock(blocks[blocks.length - 1], th).h / 72 + 0.15 * ts;
+        });
+
+        cursor[ci] = y + 0.16 * ts;
+      });
+
+      var over = Math.max.apply(null, cursor.map(function (y) { return y - bottom; }));
+      return {
+        menu: {
+          meta: { name: (parsed.title || 'Imported menu'), version: 1 },
+          page: pageOut,
+          theme: th,
+          blocks: blocks
+        },
+        overflowIn: Math.max(0, +over.toFixed(2)),
+        plan: plan
+      };
     }
 
     if (parsed.title) {

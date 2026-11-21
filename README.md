@@ -132,6 +132,38 @@ Verified on your three references: Ralph & Finns reads cream `#F6F3EC`, rust
 pink `#D691A3`. Column *count* is deliberately not guessed from pixels — rules,
 boxes and watermarks fake gutters — it comes from word boxes instead.
 
+## The reasoning layer
+
+The template is not a fixed stack. `src/planner.js` decides, per import, where
+each section goes and what an item looks like inside it.
+
+**The grid comes from the reference.** `src/layout.js` finds the reference's
+columns by projecting every text box onto the x-axis and keeping the bands
+between the gutters — the method that survives centred headings (which defeat
+left-edge clustering) and full-width rules. Those bands become the template's
+columns, normalised to the page. A Pastis reference genuinely resolves to four
+zones (`62–285`, `314–661`, `697–1038`, `1083–1287` pt), so a restaurant dropping
+that image in gets four columns, not one.
+
+**Sections are packed, never reordered.** Section order is editorial, so the
+packer only moves whole sections to the next column, balancing by measured
+height. Reading order is asserted in the test: sorting the placed sections by
+`(col, y)` must reproduce the source order exactly.
+
+**Fitting is a search, in the order a designer works.** Same grid and smaller
+type first (down to 0.75×), and only then an extra column. Every plan reports
+`overflowIn` and `fits`, so the app can say "this needs a second page" instead of
+quietly running off the sheet.
+
+**Item pattern is inferred from the content**, not assumed: whether a section has
+descriptions, whether its names are all-caps, whether prices are leader-dotted or
+right-aligned in a column. A wine list and a cocktail list are not the same
+template, even on the same page.
+
+Verified: 15 planner checks over the real Pastis read — 4 columns matching the
+reference, 66 items placed in order across them, and a separate 10-dish menu
+fitted at full type size (3 columns, 0 in overflow).
+
 ## Verify it
 
     npm install                    # fflate, needed by jsPDF's node build

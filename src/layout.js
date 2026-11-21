@@ -163,34 +163,77 @@
       return parts.join(' ');
     }
 
-    // ---- 3. columns are established by TEXT segments only. A right-aligned
-    // price must never found a column of its own, or every price in the menu
-    // detaches from its dish and lands on a stranger.
-    var textSegs = segments.filter(function (s) { return !s.isPrice; });
-    var priceSegs = segments.filter(function (s) { return s.isPrice; });
+    // ---- 3. columns from a vertical whitespace projection. Left-edge clustering
+    // fails on centred headings (each one is its own "left edge") and overlap
+    // clustering chains neighbours together. Projecting every text box onto the
+    // x-axis and looking for gutters is the method that survives both — it is
+    // what a typesetter's eye does: columns are the bands between the gaps.
+    var pageW = Math.max.apply(null, segments.map(function (s) { return s.right; })) || 1;
+    var yMin = Math.min.apply(null, segments.map(function (s) { return s.cy; }));
+    var yMax = Math.max.apply(null, segments.map(function (s) { return s.cy; }));
+    var bodyTop = yMin + (yMax - yMin) * 0.12;
 
-    textSegs.sort(function (a, b) { return a.left - b.left; });
-    var columns = [];
-    textSegs.forEach(function (seg) {
-      var target = null;
-      for (var i = 0; i < columns.length; i++) {
-        var c = columns[i];
-        var overlap = Math.min(c.right, seg.right) - Math.max(c.left, seg.left);
-        var narrower = Math.min(c.right - c.left, seg.right - seg.left) || 1;
-        if (overlap > narrower * 0.5) { target = c; break; }
-      }
-      if (!target) {
-        target = { left: seg.left, right: seg.right, segments: [] };
-        columns.push(target);
-      }
-      target.segments.push(seg);
-      target.left = Math.min(target.left, seg.left);
-      target.right = Math.max(target.right, seg.right);
+    // mastheads and full-width rules are not column evidence
+    var candidates = segments.filter(function (s) {
+      return (s.right - s.left) < pageW * 0.35 && s.cy >= bodyTop;
     });
+    if (candidates.length < 2) candidates = segments.slice();
+
+    var minLeft = Math.min.apply(null, candidates.map(function (s) { return s.left; }));
+    var maxRight = Math.max.apply(null, candidates.map(function (s) { return s.right; }));
+    var spanW = Math.max(1, maxRight - minLeft);
+    var NB = 512;
+    var bins = new Int32Array(NB);
+    candidates.forEach(function (s) {
+      var a = Math.floor(((s.left - minLeft) / spanW) * (NB - 1));
+      var b = Math.floor(((s.right - minLeft) / spanW) * (NB - 1));
+      for (var i = Math.max(0, a); i <= Math.min(NB - 1, b); i++) bins[i]++;
+    });
+
+    var runs = [], open = -1;
+    for (var bi = 0; bi < NB; bi++) {
+      if (bins[bi] > 0 && open < 0) open = bi;
+      else if (bins[bi] === 0 && open >= 0) { runs.push([open, bi - 1]); open = -1; }
+    }
+    if (open >= 0) runs.push([open, NB - 1]);
+
+    // a gap narrower than ~1% of the page is word spacing, not a gutter
+    var gutterMin = Math.max(2, Math.round(NB * 0.010));
+    var bands = [];
+    runs.forEach(function (r) {
+      var last = bands[bands.length - 1];
+      if (last && r[0] - last[1] - 1 < gutterMin) last[1] = r[1];
+      else bands.push([r[0], r[1]]);
+    });
+
+    var toX = function (bin) { return minLeft + (bin / (NB - 1)) * spanW; };
+    var columns = bands.map(function (b) {
+      return { left: toX(b[0]), right: toX(b[1]), segments: [] };
+    });
+    // drop slivers (a stray price or a page number)
+    columns = columns.filter(function (c) {
+      return (c.right - c.left) > spanW * 0.06;
+    });
+    if (!columns.length) {
+      columns = [{ left: minLeft, right: maxRight, segments: [] }];
+    }
+
+    // every segment belongs to the column it overlaps most; the column's
+    // geometry stays what the gutters said, so bands cannot overlap each other
+    segments.forEach(function (seg) {
+      var best = null, bestOverlap = -1;
+      columns.forEach(function (c) {
+        var ov = Math.min(c.right, seg.right) - Math.max(c.left, seg.left);
+        if (ov > bestOverlap) { bestOverlap = ov; best = c; }
+      });
+      if (!best) best = columns[columns.length - 1];
+      best.segments.push(seg);
+    });
+    columns = columns.filter(function (c) { return c.segments.length; });
     columns.sort(function (a, b) { return a.left - b.left; });
 
     // ---- 3b. every price goes to the nearest dish line *in its own column*
-    priceSegs.forEach(function (p) {
+    segments.filter(function (s) { return s.isPrice; }).forEach(function (p) {
       var cx = (p.left + p.right) / 2, hostCol = null, colD = Infinity;
       columns.forEach(function (c) {
         var d = cx < c.left ? c.left - cx : cx > c.right ? cx - c.right : 0;
@@ -210,9 +253,7 @@
         host.words = host.words.concat(p.words);
         host.leaderAt = host.words.length - p.words.length;
         host.right = Math.max(host.right, p.right);
-      } else {
-        hostCol.segments.push(p);
-        hostCol.right = Math.max(hostCol.right, p.right);
+        if (hostCol.right < p.right) hostCol.right = p.right;
       }
     });
 
