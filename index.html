@@ -744,7 +744,13 @@ function runParse() {
 // The review step: every dish and every price is on screen and editable before
 // anything reaches the canvas. Assumed prices are called out in the warnings.
 function renderPreview() {
-  const box = document.getElementById('importPreview');
+  const host = document.getElementById('importPreview');
+  let box = document.getElementById('parsePanel');
+  if (!box) {
+    box = document.createElement('div');
+    box.id = 'parsePanel';
+    host.appendChild(box);
+  }
   const applyBtn = document.getElementById('importApply');
   box.innerHTML = '';
   if (!pending) return;
@@ -895,6 +901,49 @@ async function importImage(file) {
   const read = MenuDesign.analyse(canvas.width, canvas.height, img.data, { channels: 4 });
   designRef = { read: read, url: URL.createObjectURL(file) };
   renderDesignPanel();
+  await tryOcr(file);
+}
+
+// Browsers have no decent OCR engine, so the copy comes from a local sidecar
+// (ocr/server.py) that returns word boxes. Same reconstruction path as the PDF.
+const OCR_SERVICE = 'http://127.0.0.1:8792';
+
+async function tryOcr(file) {
+  const panel = document.getElementById('designPanel');
+  const note = document.createElement('div');
+  note.className = 'warnline info';
+  note.textContent = 'Reading the text with the local OCR engine…';
+  panel.appendChild(note);
+
+  let words = null;
+  try {
+    const res = await fetch(OCR_SERVICE + '/ocr', { method: 'POST', body: file });
+    if (!res.ok) throw new Error('OCR service returned ' + res.status);
+    const data = await res.json();
+    words = data.words;
+  } catch (err) {
+    note.className = 'warnline';
+    note.textContent = 'No OCR service on ' + OCR_SERVICE + ' — design read only. ' +
+      'Start it with: .ocr/bin/python ocr/server.py';
+    return;
+  }
+  note.remove();
+
+  if (!words || !words.length) {
+    panel.insertAdjacentHTML('beforeend',
+      '<div class="warnline">The OCR engine found no text in that image.</div>');
+    return;
+  }
+
+  const laid = MenuLayout.reconstruct(words);
+  pending = MenuImport.parse(laid.text);
+  renderPreview();
+
+  panel.insertAdjacentHTML('beforeend',
+    '<div class="hint">OCR found ' + words.length + ' lines · ' + laid.stats.columns +
+    ' column(s) · mean confidence ' +
+    Math.round(100 * words.reduce((a, w) => a + (w.conf || 0), 0) / words.length) +
+    '%. Check the prices below — OCR misreads digits more often than words.</div>');
 }
 
 function renderDesignPanel() {

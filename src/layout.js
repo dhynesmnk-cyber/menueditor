@@ -32,9 +32,11 @@
   function reconstruct(words, opts) {
     opts = opts || {};
     var src = (words || []).filter(function (w) {
-      return w && typeof w.text === 'string' && w.text.trim().length &&
-             w.w > 0 && w.h > 0 &&
-             (w.conf == null || w.conf >= (opts.minConfidence == null ? 35 : opts.minConfidence));
+      if (!w || typeof w.text !== 'string' || !w.text.trim().length || !(w.w > 0) || !(w.h > 0)) return false;
+      if (w.conf == null) return true;
+      // engines disagree: tesseract reports 0-100, RapidOCR/Paddle 0-1
+      var conf = w.conf <= 1 ? w.conf * 100 : w.conf;
+      return conf >= (opts.minConfidence == null ? 35 : opts.minConfidence);
     });
     if (!src.length) return { text: '', columns: [], stats: { words: 0, lines: 0, columns: 0 } };
 
@@ -161,10 +163,15 @@
       return parts.join(' ');
     }
 
-    // ---- 3. cluster segments into columns by their x range
-    segments.sort(function (a, b) { return a.left - b.left; });
+    // ---- 3. columns are established by TEXT segments only. A right-aligned
+    // price must never found a column of its own, or every price in the menu
+    // detaches from its dish and lands on a stranger.
+    var textSegs = segments.filter(function (s) { return !s.isPrice; });
+    var priceSegs = segments.filter(function (s) { return s.isPrice; });
+
+    textSegs.sort(function (a, b) { return a.left - b.left; });
     var columns = [];
-    segments.forEach(function (seg) {
+    textSegs.forEach(function (seg) {
       var target = null;
       for (var i = 0; i < columns.length; i++) {
         var c = columns[i];
@@ -180,9 +187,34 @@
       target.left = Math.min(target.left, seg.left);
       target.right = Math.max(target.right, seg.right);
     });
-    // a column that is only inside another one's x-range is not a column
-    columns = columns.filter(function (c) { return c.segments.length > 0; });
     columns.sort(function (a, b) { return a.left - b.left; });
+
+    // ---- 3b. every price goes to the nearest dish line *in its own column*
+    priceSegs.forEach(function (p) {
+      var cx = (p.left + p.right) / 2, hostCol = null, colD = Infinity;
+      columns.forEach(function (c) {
+        var d = cx < c.left ? c.left - cx : cx > c.right ? cx - c.right : 0;
+        if (d < colD) { colD = d; hostCol = c; }
+      });
+      if (!hostCol) return;
+
+      var host = null, hostD = Infinity;
+      hostCol.segments.forEach(function (s) {
+        if (s.leaderAt != null || s.isPrice) return;
+        if (p.left < s.right - 1) return;              // price sits to the right
+        var d = Math.abs(s.cy - p.cy);
+        if (d < hostD) { hostD = d; host = s; }
+      });
+
+      if (host && hostD <= medH * 1.4) {
+        host.words = host.words.concat(p.words);
+        host.leaderAt = host.words.length - p.words.length;
+        host.right = Math.max(host.right, p.right);
+      } else {
+        hostCol.segments.push(p);
+        hostCol.right = Math.max(hostCol.right, p.right);
+      }
+    });
 
     // ---- 4. read out: column by column, top to bottom, blank line at big breaks
     var lineStep = median(lines.map(function (l, i) {

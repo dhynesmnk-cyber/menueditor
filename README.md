@@ -74,24 +74,47 @@ them as a second column and detaches every price from its dish. On a test menu
 this takes the PDF from 0 recovered dishes to **8 dishes in 3 sections with 8
 descriptions**.
 
-**PNG → design.** An image gives you the palette, the page shape and the
-margins, so the editor can start from a reference's proportions and colours, with
-the image available as a tracing underlay. What it does not give you is the copy.
+**PNG → copy and design.** With the local OCR sidecar running, an image yields
+both: the text (through the same column reconstruction the PDF path uses) and the
+palette, page shape and margins. The image stays available as a tracing underlay.
+Without the sidecar the image still gives you the design read, so the feature
+degrades rather than breaks.
 
-### Why PNG does not do copy (yet)
+### OCR engine choice, measured
 
-Whole-page OCR on real designed menus was measured, not assumed. Tesseract at
-47–67% confidence reads *across* columns:
+The first attempt used tesseract in the browser. Measured on your three menus,
+whole-page tesseract reads *across* columns and garbles names:
 
     SPRITZ ROYALE 18 HORS D'OEUVRES BRUNCH Almond Crotssont 7
     Fish Soup £800 Bestraot Carpaccio £600 Chicken Liars so 0
 
-On the three reference menus, whole-page OCR yielded 13 / 18 / 1 "dishes", most
-of them garbage concatenations, and the parser could salvage nothing usable. The
-column-aware path is built (`layout.js` is the same code that fixes the PDF), but
-it needs a stronger OCR engine than tesseract before the text is worth showing a
-restaurant. Ghosted watermarks (Salt Room) and photo borders (Ralph & Finns) both
-make it worse. So the honest split is: PDF or paste for copy, image for design.
+| pipeline | mean confidence | dishes recovered (Salt Room / Ralph & Finns / Pastis) |
+|---|---|---|
+| tesseract, whole page | 47–67% | 13 / 1 / 18 — mostly garbage concatenations |
+| RapidOCR + layout reconstruction | **94–96%** | **22 / 21 / 66** — readable, with descriptions |
+
+Two changes did it, and they were not the same change:
+
+1. **A better engine.** RapidOCR runs the PaddleOCR detection/recognition models
+   on onnxruntime — CPU, no PyTorch, ~100MB installed. Browsers have nothing
+   comparable, so it runs as a local sidecar process rather than in the page.
+2. **Reading order.** The engine returns line boxes, but it still reports them in
+   its own order and prices still sit in their own x-cluster. `src/layout.js`
+   rebuilds lines and columns, and a price is attached to the nearest dish line
+   *within its own column* — without that last rule, a price from one column
+   lands on the dish beside it.
+
+Digits remain the weak spot (`8.50` can come back as `850`), which is why the
+review pane asks you to confirm every price before it reaches the canvas.
+
+### Running the OCR sidecar
+
+    python3 -m venv .ocr
+    .ocr/bin/pip install rapidocr-onnxruntime pillow
+    .ocr/bin/python ocr/server.py          # http://127.0.0.1:8792
+
+The app probes `/health` on upload; if nothing answers it falls back to the
+design-only read and says so. Nothing else in the app requires the sidecar.
 
 ### What the design read actually extracts
 
@@ -185,19 +208,20 @@ font-specific, and the baseline ratio is re-derived from whatever TTF loads.
 
 ## What is not built yet
 
-- **Copy from a photo.** The layout reconstruction is done and tested; it needs a
-  stronger OCR engine than tesseract to be worth showing a restaurant.
 - **Section groups that reflow internally** when items are added, while the
   group's box stays where it was dropped. Today blocks are individually placed.
 - Multi-page flow when a menu outgrows one sheet (the importer reports overflow
   but does not paginate).
 - Font library + upload-your-own, web-link export, project file save/load.
+- The OCR sidecar is a local process, not a hosted service; a deployed version
+  needs the engine moved somewhere it can run (or a vision API).
 - The file-upload UI is wired and statically checked, but was not clicked through
   in a browser: Chromium would not start on the build machine.
 
 ## Files
 
     index.html            editor UI, import review, screen renderer, fidelity readout
+    ocr/server.py         local OCR sidecar (RapidOCR) — POST /ocr -> word boxes
     src/engine.js         layout engine (node + browser, UMD)
     src/import.js         menu-text parser (node + browser, UMD)
     src/layout.js         word boxes -> lines -> columns -> text
@@ -206,4 +230,4 @@ font-specific, and the baseline ratio is re-derived from whatever TTF loads.
     src/pdf.js            PDF exporter — dumb consumer of the display list
     fonts/                Crimson Text + Lato, both SIL OFL 1.1 (see fonts/OFL-*.txt)
     vendor/               jsPDF 2.5.2, pdf.js 3.11 (umd + node + worker)
-    test/                 parse corpus, design reads, layout, e2e, fidelity, syntax, fixtures
+    test/                 parse corpus, design reads, layout, OCR bench, e2e, fidelity, fixtures

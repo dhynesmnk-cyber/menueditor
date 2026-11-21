@@ -32,6 +32,8 @@ else:
 referenced = set(re.findall(r"getElementById\(\s*'([^']+)'\s*\)", src))
 referenced |= set(re.findall(r"querySelector\(\s*'#([A-Za-z0-9_-]+)'", src))
 defined = set(re.findall(r'\bid="([^"]+)"', html))
+# ids the script creates at runtime (el.id = 'x') are legitimate lookups
+defined |= set(re.findall(r"\.id\s*=\s*'([^']+)'", src))
 
 missing = sorted(referenced - defined)
 if missing:
