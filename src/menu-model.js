@@ -260,9 +260,31 @@
     };
   }
 
+  /**
+   * One menu per sheet. Returns a single-element array when it all fits.
+   */
+  function buildPagesFromParsed(engine, parsed, opts) {
+    opts = opts || {};
+    var plan = opts.plan;
+    if (!plan || !plan.pages || !(plan.pageCount > 1)) {
+      return [buildMenuFromParsed(engine, parsed, opts)];
+    }
+    return plan.pages.map(function (pg, i) {
+      var subPlan = Object.assign({}, plan, {
+        sections: pg.sections, fills: pg.fills, pageCount: 1, pages: null
+      });
+      // the masthead belongs to sheet one; later sheets open with content
+      var subParsed = i === 0 ? parsed : Object.assign({}, parsed, {
+        title: null, subtitle: null, kicker: null
+      });
+      return buildMenuFromParsed(engine, subParsed, Object.assign({}, opts, { plan: subPlan })).menu;
+    });
+  }
+
   return {
     buildMenu: buildMenu,
     buildMenuFromParsed: buildMenuFromParsed,
+    buildPagesFromParsed: buildPagesFromParsed,
     stackBlocks: stackBlocks,
     demoItems: demoItems,
     FONTS: FONTS, THEME: THEME,

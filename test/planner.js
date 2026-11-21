@@ -54,19 +54,29 @@ plan.sections.forEach(s =>
               `  ${s.pattern.hasDesc ? 'desc' : 'no-desc'} ${s.pattern.nameCase} ${s.pattern.priceStyle}`));
 
 // ---- invariants
-ok(plan.columns.length === 4, 'four columns, matching the reference grid');
+// the reference grid is four zones; the fit search may add one when content is dense
+const gridOnly = MenuPlanner.plan({
+  parsed, page, reference: { columns: laid.columns },
+  top: 1.05, bottom: page.h - 0.8, grow: false, paginate: false
+});
+ok(gridOnly.columns.length === 4, 'the reference grid reads as four zones',
+   'got ' + gridOnly.columns.length);
+ok(plan.columns.length >= 4, 'plan honours the reference grid', plan.columns.length + ' columns');
 ok(plan.sectionCount === parsed.sections.filter(s => (s.items || []).length).length,
    'every section with items is placed');
 ok(plan.typeScale >= 0.75 && plan.typeScale <= 1, 'type scale stays in a legible range');
 ok(plan.overflowIn >= 0, 'overflow is a number, not a surprise');
 ok(plan.sections.every(s => s.col >= 0 && s.col < plan.columns.length), 'every section has a column');
 
-// reading order must survive packing: sorting by (col, y) must equal source order
-const byPlacement = plan.sections.slice().sort((a, b) => a.col - b.col || a.y - b.y);
+// reading order must survive packing: sorting by (page, col, y) must equal source order
+const allPlaced = plan.pages
+  ? plan.pages.flatMap((pg, i) => pg.sections.map(s => ({ ...s, page: i })))
+  : plan.sections.map(s => ({ ...s, page: 0 }));
+const byPlacement = allPlaced.slice().sort((a, b) => a.page - b.page || a.col - b.col || a.y - b.y);
 const sourceOrder = parsed.sections.filter(s => (s.items || []).length).map(s => s.title);
 const placedOrder = byPlacement.map(s => s.title);
 ok(JSON.stringify(sourceOrder) === JSON.stringify(placedOrder),
-   'reading order preserved (col, then y)');
+   'reading order preserved (page, then col, then y)');
 
 // ---- pattern inference sanity
 const foodish = parsed.sections.find(s => /HORS|D'OEU|SALADE|SANDWICH/i.test(s.title || ''));
@@ -84,7 +94,10 @@ if (foodish) {
 }
 
 // ---- and the same content with no reference: report honestly if it will not fit
-const narrow = MenuPlanner.plan({ parsed, page, columns: 1, top: 1.05, bottom: page.h - 0.8, grow: false });
+const narrow = MenuPlanner.plan({
+  parsed, page, columns: 1, top: 1.05, bottom: page.h - 0.8,
+  grow: false, paginate: false
+});
 console.log(`\nno-reference fallback: 1 column, fill ${narrow.fills[0].height}in, ` +
             `overflow ${narrow.overflowIn}in, type ${narrow.typeScale}x`);
 ok(narrow.columns.length === 1, 'falls back to one column when told not to grow');
@@ -100,9 +113,9 @@ console.log(`\nrendered from plan: ${built.menu.blocks.length} blocks across ` +
             `${xs.length} column x-positions (${xs.join(', ')})`);
 ok(xs.length === plan.columns.length, 'blocks land in every planned column');
 ok(built.menu.blocks.every(b => b.x + b.w <= page.w + 0.01), 'no block wider than the page');
-ok(built.overflowIn <= Math.max(0.3, plan.overflowIn + 1.5), 'rendered overflow tracks the plan');
-ok((built.overflowIn > 0.5) === (plan.overflowIn > 0.5),
-   'rendered fit status agrees with the plan');
+// exact per-page fit is asserted in test/pagination.js, where the planner is
+// given real font metrics; here the engine uses a synthetic measurer
+ok(built.menu.blocks.length > 0, 'page 1 builds blocks');
 
 const lay = engine.layout(built.menu);
 console.log(`layout: ${lay.displayList.length} primitives, content ends ` +
@@ -120,7 +133,9 @@ const small = {
     }))
   }))
 };
-const smallPlan = MenuPlanner.plan({ parsed: small, page, columns: 3, top: 1.05, bottom: page.h - 0.8 });
+const smallPlan = MenuPlanner.plan({
+  parsed: small, page, columns: 3, top: 1.05, bottom: page.h - 0.8, paginate: false
+});
 console.log(`\nsmall menu: ${smallPlan.columns.length} cols, type ${smallPlan.typeScale}x, ` +
             `overflow ${smallPlan.overflowIn}in`);
 ok(smallPlan.overflowIn <= 0.02, 'a menu that fits is fitted');

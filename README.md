@@ -160,9 +160,28 @@ descriptions, whether its names are all-caps, whether prices are leader-dotted o
 right-aligned in a column. A wine list and a cocktail list are not the same
 template, even on the same page.
 
-Verified: 15 planner checks over the real Pastis read — 4 columns matching the
-reference, 66 items placed in order across them, and a separate 10-dish menu
-fitted at full type size (3 columns, 0 in overflow).
+**Pagination.** When the content still will not fit at the type floor and with an
+extra column, it goes onto a second sheet rather than off the trim. The planner
+measures with the engine's own `layoutBlock`, so a planned page and a rendered
+page are the same page (measured: page bottoms 6.33in and 6.31in against a 6.6in
+limit), and `src/pdf.js` writes one PDF page per sheet.
+
+### Three content patterns that broke the first import
+
+All three came from the real Pastis text, and none of them is exotic — they are
+how designed menus are set.
+
+| pattern | before | now |
+|---|---|---|
+| `verre 17 / bottle 80` on its own line | became a dish called "verre" | attaches to the wine above it |
+| `CRÉMANT DE BOURGOGNE NV` (caps, price below) | became a *section heading* | becomes a dish; only `SPARKLING ROSÉ` above another wine name is a heading |
+| `Homemade Granola yogurt, fresh strawberries ... 12` | name kept the description | splits at the case boundary: name `Homemade Granola`, desc `yogurt, fresh strawberries` |
+
+The splitter requires a two-word head and stops at particles (`de`, `du`, `au`,
+`with`…), so `Salt cod fritters`, `Steak Frites` and `Poulet au Vin Jaune` are
+left alone. The 44-check paste corpus is the regression gate for it.
+
+Verified: 126 checks across five suites.
 
 ## Verify it
 
@@ -172,7 +191,10 @@ fitted at full type size (3 columns, 0 in overflow).
 Individually:
 
     node test/parse.js             # 44 assertions over 9 real menu shapes
+    node test/parse-inline.js      # price-only lines, caps dishes, inline descriptions
     node test/design.js            # palette/page/margins on the 3 reference menus
+    node test/planner.js           # reference grid -> plan -> placed blocks
+    node test/pagination.js        # dense menu -> 2 sheets -> 2-page PDF
     node test/layout-test.js       # word boxes -> columns -> copy (PDF; OCR with a worker)
     node test/import-e2e.js        # paste -> blocks -> layout -> out/imported.pdf
     node test/fidelity.js          # demo menu -> out/menu.pdf

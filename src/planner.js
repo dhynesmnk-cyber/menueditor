@@ -74,14 +74,22 @@
    * counts, which is what the packer needs (it is balancing, not typesetting).
    */
   function sectionHeight(section, width, pattern, opts) {
+    var ts = opts.typeScale || 1;
+    // When a caller can measure the way the builder will render, use that — an
+    // estimate and a render that disagree is how a plan promises a fit the page
+    // cannot keep (measured 1.0in predicted vs 2.6in real before this existed).
+    if (opts.blockHeight) {
+      return opts.blockHeight(section, width, pattern, ts);
+    }
     var m = opts.measure;
     var lh = opts.lineHeight || 1.35;
-    var ts = opts.typeScale || 1;
 
     function lines(text, role) {
       var size = ROLES[role].size * ts;
       if (m) {
-        var per = Math.max(1, Math.floor((width * PT) / Math.max(1, m('x', role))));
+        // measurer gets the resolved size so a caller can measure with the real
+        // font at the real point size, instead of estimating from characters
+        var per = Math.max(1, Math.floor((width * PT) / Math.max(1, m('x', role, size))));
         return Math.max(1, Math.ceil(text.length / per));
       }
       var cpl = Math.max(6, Math.floor(width / ((size / PT) * 0.5)));
@@ -91,7 +99,7 @@
     var h = 0;
     h += lines(section.title || '', 'heading') * ROLES.heading.size * ts * lh / PT;
     h += 0.10 * ts;                               // rule + space under the heading
-    h += (opts.sectionGap == null ? 0.22 : opts.sectionGap) * ts;
+    h += (opts.sectionGap == null ? 0.16 : opts.sectionGap) * ts;
 
     (section.items || []).forEach(function (it) {
       var nameLines = lines(it.name || '', 'item');
@@ -99,7 +107,7 @@
       if (pattern.hasDesc && it.desc) {
         h += lines(it.desc, 'desc') * ROLES.desc.size * ts * 1.45 / PT;
       }
-      h += (opts.itemGap == null ? 0.13 : opts.itemGap) * ts;
+      h += (opts.itemGap == null ? 0.15 : opts.itemGap) * ts;
     });
     return h;
   }
@@ -169,6 +177,65 @@
    *   measure    - optional text measurer
    * @returns {object} plan
    */
+  /**
+   * Split sections over as many sheets as they need. Columns fill left to right
+   * with a HARD bottom limit — this is pagination, not balancing, so a section
+   * either fits where it lands or starts the next sheet. Order is never touched
+   * and a section is never split.
+   */
+  function paginate(spec, columns, sections, scale) {
+    var top = spec.top == null ? 1.0 : spec.top;
+    var bottomLimit = spec.bottom == null ? spec.page.h - 0.9 : spec.bottom;
+    var opts = {
+      measure: spec.measure, itemGap: spec.itemGap,
+      sectionGap: spec.sectionGap, lineHeight: spec.lineHeight,
+      blockHeight: spec.blockHeight,
+      typeScale: scale
+    };
+
+    var pages = [], rest = sections.slice(), guard = 0;
+    while (rest.length && guard++ < 60) {
+      var yByCol = columns.map(function () { return top; });
+      var col = 0, placed = [], i = 0;
+
+      while (i < rest.length) {
+        var sec = rest[i];
+        var pat = inferPattern(sec);
+        var h = sectionHeight(sec, columns[col].w, pat, opts);
+        if (yByCol[col] + h <= bottomLimit + 0.01) {
+          placed.push({
+            title: sec.title, items: sec.items || [], pattern: pat, col: col,
+            x: columns[col].x, w: columns[col].w,
+            y: +yByCol[col].toFixed(3), h: +h.toFixed(3)
+          });
+          yByCol[col] += h;
+          i++;
+        } else if (col < columns.length - 1) {
+          col++;
+        } else {
+          break;                       // sheet is full — remainder goes to page 2
+        }
+      }
+
+      // a single section taller than every column still has to be placed, or we
+      // would loop forever dropping it
+      if (!placed.length) {
+        placed.push({
+          title: rest[0].title, items: rest[0].items || [], pattern: inferPattern(rest[0]),
+          col: 0, x: columns[0].x, w: columns[0].w, y: top, h: 0
+        });
+        i = 1;
+      }
+
+      pages.push({
+        sections: placed,
+        fills: yByCol.map(function (y, k) { return { col: k, height: +(y - top).toFixed(2) }; })
+      });
+      rest = rest.slice(i);
+    }
+    return pages;
+  }
+
   function plan(spec) {
     // fitting is a search, in the order a designer works: same grid, smaller
     // type first; only add a column when the type would get unreadably small
@@ -187,6 +254,25 @@
       }));
       if (grown.overflowIn < best.overflowIn) return grown;
     }
+
+    // Still does not fit even at the type floor and with an extra column: lay it
+    // out over successive sheets instead of running off the trim.
+    if (best.overflowIn > 0.02 && spec.paginate !== false) {
+      var secs = (spec.parsed && spec.parsed.sections || []).filter(function (s) {
+        return s && (s.items || []).length;
+      });
+      var pages = paginate(spec, best.columns, secs, best.typeScale);
+      if (pages.length > 1) {
+        best.pages = pages;
+        best.pageCount = pages.length;
+        best.sections = pages[0].sections;
+        best.fills = pages[0].fills;
+        best.overflowIn = 0;
+        best.fits = true;
+        best.paginated = true;
+      }
+    }
+
     return best;
   }
 
@@ -206,6 +292,7 @@
       itemGap: spec.itemGap,
       sectionGap: spec.sectionGap,
       lineHeight: spec.lineHeight,
+      blockHeight: spec.blockHeight,
       typeScale: spec.typeScale
     });
 
@@ -254,12 +341,15 @@
       balanced: +(Math.max.apply(null, fills.map(function (f) { return f.height; })) -
                   Math.min.apply(null, fills.map(function (f) { return f.height; }))).toFixed(2),
       sectionCount: out.length,
-      itemCount: out.reduce(function (a, s) { return a + s.items.length; }, 0)
+      itemCount: out.reduce(function (a, s) { return a + s.items.length; }, 0),
+      pageCount: 1,
+      paginated: false
     };
   }
 
   return {
     plan: plan,
+    paginate: paginate,
     inferPattern: inferPattern,
     columnsFrom: columnsFrom,
     sectionHeight: sectionHeight,

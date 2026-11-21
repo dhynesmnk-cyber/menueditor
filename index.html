@@ -684,11 +684,91 @@ document.addEventListener('keydown', e => {
   if (e.key === 'ArrowRight') { b.x += step; relayout(); e.preventDefault(); }
 });
 
+// ---- pages ---------------------------------------------------------------
+// The planner measures with the same engine the builder renders with, so a
+// planned page and a rendered page are the same page.
+function measureFn(text, role, size) {
+  const family = (state.menu.theme.fonts && state.menu.theme.fonts.body ?
+    state.menu.theme.fonts.body.family : 'MLato');
+  return engine.wOf(text, { font: family, style: 'normal', size: size || 10, tracking: 0 });
+}
+
+function blockHeightFn(section, width, pattern, ts) {
+  const th = state.menu.theme;
+  const box = b => Object.assign({ x: 0, y: 0, w: width }, b);
+  let h = engine.layoutBlock(box({
+    type: 'section', text: section.title, size: 8.2 * ts, tracking: 2.2
+  }), th).h / 72 + 0.10 * ts;
+  (section.items || []).forEach(it => {
+    h += engine.layoutBlock(box({
+      type: 'item', name: it.name, desc: it.desc || '', price: it.price,
+      tags: it.tags || [], size: 12.4 * ts, descSize: 8.2 * ts
+    }), th).h / 72 + 0.15 * ts;
+  });
+  return h + 0.16 * ts;
+}
+
+function planAndBuild(parsed) {
+  const page = state.menu.page;
+  const plan = MenuPlanner.plan({
+    parsed: parsed,
+    page: page,
+    reference: designRef && designRef.columns ? { columns: designRef.columns } : null,
+    top: 1.05,
+    bottom: page.h - 0.8,
+    measure: measureFn,
+    blockHeight: blockHeightFn
+  });
+  const menus = MenuModel.buildPagesFromParsed(engine, parsed, {
+    page: page, theme: state.menu.theme, plan: plan,
+    top: 1.05, bottom: page.h - 0.8
+  });
+  state.pages = menus;
+  state.pageIndex = 0;
+  state.menu = menus[0];
+  state.sel = null;
+  drawPageNav();
+  relayout();
+  return { plan: plan, menus: menus };
+}
+
+function drawPageNav() {
+  let nav = document.getElementById('pageNav');
+  if (!nav) {
+    nav = document.createElement('div');
+    nav.id = 'pageNav';
+    nav.style.cssText = 'display:flex;gap:6px;align-items:center;margin-left:8px';
+    const anchor = document.getElementById('export');
+    anchor.parentNode.insertBefore(nav, anchor);
+  }
+  const n = state.pages ? state.pages.length : 1;
+  if (n <= 1) { nav.innerHTML = ''; return; }
+  nav.innerHTML = '<button class="btn" id="pgPrev">‹</button>' +
+    '<span class="hint">page ' + (state.pageIndex + 1) + ' / ' + n + '</span>' +
+    '<button class="btn" id="pgNext">›</button>';
+  document.getElementById('pgPrev').onclick = () => showPage(state.pageIndex - 1);
+  document.getElementById('pgNext').onclick = () => showPage(state.pageIndex + 1);
+}
+
+function showPage(i) {
+  if (!state.pages || !state.pages.length) return;
+  const next = Math.max(0, Math.min(state.pages.length - 1, i));
+  state.pageIndex = next;
+  state.menu = state.pages[next];
+  state.sel = null;
+  drawPageNav();
+  relayout();
+}
+
 // ---- export --------------------------------------------------------------
 document.getElementById('export').onclick = () => {
-  const pdf = MenuPDF.renderPDF(jspdf.jsPDF, state.menu, state.lay, fontDefs);
-  pdf.save('menu.pdf');
-  document.getElementById('status').textContent = 'exported ' + new Date().toLocaleTimeString();
+  const menus = (state.pages && state.pages.length) ? state.pages : [state.menu];
+  const lays = menus.map(m => (m === state.menu && state.lay) ? state.lay : engine.layout(m));
+  const pdf = MenuPDF.renderPDFPages(jspdf.jsPDF, menus, lays, fontDefs);
+  pdf.save(menus.length > 1 ? 'menu-' + menus.length + 'pp.pdf' : 'menu.pdf');
+  document.getElementById('status').textContent =
+    'exported ' + menus.length + ' page' + (menus.length > 1 ? 's' : '') +
+    ' · ' + new Date().toLocaleTimeString();
 };
 
 // ---- import --------------------------------------------------------------
@@ -810,21 +890,7 @@ function renderPreview() {
 
 function applyImport() {
   if (!pending || !pending.stats.items) return;
-  const page = state.menu.page;
-  // the reference's own grid decides the template; without a reference the
-  // planner falls back to a single column and says whether that fits
-  const plan = MenuPlanner.plan({
-    parsed: pending,
-    page: page,
-    reference: designRef && designRef.columns ? { columns: designRef.columns } : null,
-    top: 1.05,
-    bottom: page.h - 0.8
-  });
-  const res = MenuModel.buildMenuFromParsed(engine, pending, {
-    page: page, theme: state.menu.theme, plan: plan,
-    top: 1.05, bottom: page.h - 0.8
-  });
-  state.menu = res.menu;
+  planAndBuild(pending);
   state.sel = null;
   importModal.classList.remove('open');
   fitZoom();
@@ -1006,18 +1072,7 @@ function applyDesign(t) {
   state.menu.page.w = t.page.w;
   state.menu.page.h = t.page.h;
   if (pending && pending.stats.items) {
-    const plan = MenuPlanner.plan({
-      parsed: pending,
-      page: state.menu.page,
-      reference: designRef && designRef.columns ? { columns: designRef.columns } : null,
-      top: 1.05,
-      bottom: state.menu.page.h - 0.8
-    });
-    const res = MenuModel.buildMenuFromParsed(engine, pending, {
-      page: state.menu.page, theme: state.menu.theme, plan: plan,
-      top: 1.05, bottom: state.menu.page.h - 0.8
-    });
-    state.menu = res.menu;
+    planAndBuild(pending);
   }
   bindPage();
   fitZoom();

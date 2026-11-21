@@ -48,6 +48,74 @@
     return /[A-Z]/.test(s) && !/[a-z]/.test(s);
   }
 
+  // Units that may appear beside a price set on its own line ("verre 15",
+  // "bottle 80") — wine lists print prices this way.
+  var UNIT_WORDS = /^(verre|bottle|bottles|bouteille|bouteilles|glass|btl|carafe|curafe|pichet|each|for|half|demi|copa|cup|bowl|small|large|reg|pint|can|jar|corbeille|selon|arrivage)$/i;
+  var PRICE_TOKEN = /^\$?\d{1,3}(?:[.,]\d{1,2})?$/;
+
+  function isPriceOnlyLine(line) {
+    var t = String(line).trim();
+    if (!t || t.length > 44) return false;
+    var toks = t.split(/[\s·\/|,+]+/).filter(Boolean);
+    if (!toks.length) return false;
+    var nums = 0;
+    for (var i = 0; i < toks.length; i++) {
+      var tok = toks[i].replace(/[*†‡]/g, '');
+      if (!tok) continue;
+      if (PRICE_TOKEN.test(tok)) { nums++; continue; }
+      if (UNIT_WORDS.test(tok)) continue;
+      return false;
+    }
+    return nums > 0;
+  }
+
+  var NAME_PARTICLES = /^(de|du|des|la|le|les|au|aux|a|à|of|the|and|with|on|in|en|sur|sous|d|d'|l'|l)$/i;
+
+  /**
+   * "Homemade Granola yogurt, fresh strawberries" -> name + description.
+   * The boundary is the first lowercase word following at least two
+   * capitalised words; a comma is the fallback. A two-word head is required, so
+   * "Salt cod fritters" and "Steak Frites" are left alone.
+   */
+  function splitInlineDesc(name) {
+    var t = String(name).trim();
+    if (t.length < 12) return null;
+    var words = t.split(/\s+/);
+    if (words.length < 3) return null;
+
+    var caps = 0;
+    for (var i = 0; i < words.length; i++) {
+      var bare = words[i].replace(/^[(&"'“”*]+|[)*"'“”,.;:]+$/g, '');
+      if (!bare) continue;
+      if (/^[A-Z0-9&'’]/.test(bare)) { caps++; continue; }
+      if (/^[a-z]/.test(bare)) {
+        if (caps >= 2 && !NAME_PARTICLES.test(bare) && words.length - i >= 2) {
+          return { name: words.slice(0, i).join(' '), desc: words.slice(i).join(' ') };
+        }
+        break;
+      }
+      break;
+    }
+
+    var comma = t.search(/[,;]\s*[a-z(]/);
+    if (comma > 0) {
+      var head = t.slice(0, comma).trim();
+      var tail = t.slice(comma + 1).trim();
+      if (head.split(/\s+/).length >= 2 && tail.length >= 4) {
+        return { name: head, desc: tail };
+      }
+    }
+    return null;
+  }
+
+  function nextNonEmpty(lines, from) {
+    for (var i = from + 1; i < lines.length; i++) {
+      var t = String(lines[i]).trim();
+      if (t) return t;
+    }
+    return null;
+  }
+
   function cleanName(s) {
     return String(s)
       .replace(/^[\s•·*\u2022\-–—]+/, '')
@@ -174,6 +242,20 @@
         continue;
       }
 
+      // A line of prices and units alone belongs to the item above it. This has
+      // to run before splitPrice, or "verre 17" becomes a dish called "verre".
+      if (isPriceOnlyLine(trimmed)) {
+        if (lastItem) {
+          lastItem.price = lastItem.price
+            ? lastItem.price + ' / ' + trimmed.replace(/\s+/g, ' ')
+            : trimmed.replace(/\s+/g, ' ');
+          lastItem._conf = 'lookahead';
+        } else {
+          warn('warn', 'A price on its own line had no dish above it — not imported.', trimmed);
+        }
+        continue;
+      }
+
       var priced = splitPrice(trimmed);
 
       if (priced) {
@@ -183,6 +265,9 @@
           warn('error', 'A price with no dish name was ignored.', trimmed);
           continue;
         }
+        // descriptions are often inline in the source line, before the leader
+        var inline = splitInlineDesc(name);
+        if (inline) name = cleanName(inline.name);
         if (pendingSection) { ensureSection(pendingSection); pendingSection = null; }
         else if (!cur) ensureSection(opts.defaultSection || 'Menu');
         var price = normPrice(priced.price);
@@ -191,7 +276,7 @@
           warn('warn', 'Duplicate dish name "' + name + '" — pasted twice?', trimmed);
         }
         lastItem = {
-          name: name, desc: '', price: price, tags: tagRes.tags,
+          name: name, desc: inline ? inline.desc : '', price: price, tags: tagRes.tags,
           _conf: priced.conf, _line: i + 1
         };
         cur.items.push(lastItem);
@@ -235,6 +320,21 @@
       }
 
       if (score >= 3) {
+        // An all-caps name whose price sits on the line below is a DISH, not a
+        // heading — this is how a wine list sets "CRÉMANT DE BOURGOGNE NV" over
+        // "verre 17 / bottle 80", while "SPARKLING ROSÉ" above another wine name
+        // stays a heading.
+        var nextTxt = nextNonEmpty(lines, i);
+        if (nextTxt && isPriceOnlyLine(nextTxt)) {
+          if (pendingSection) { ensureSection(pendingSection); pendingSection = null; }
+          else if (!cur) ensureSection(opts.defaultSection || 'Menu');
+          lastItem = {
+            name: cleanName(trimmed), desc: '', price: '', tags: [],
+            _conf: 'lookahead', _line: i + 1
+          };
+          cur.items.push(lastItem);
+          continue;
+        }
         ensureSection(cleanName(trimmed));
         lastItem = null;
         continue;
@@ -295,6 +395,7 @@
 
   return {
     parse: parse, splitPrice: splitPrice, sectionScore: sectionScore,
-    extractTags: extractTags, normPrice: normPrice
+    extractTags: extractTags, normPrice: normPrice,
+    splitInlineDesc: splitInlineDesc, isPriceOnlyLine: isPriceOnlyLine
   };
 });

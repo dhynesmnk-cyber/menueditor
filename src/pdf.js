@@ -50,23 +50,23 @@
    * @param fonts      [{family, style, file, b64}]
    * @returns jsPDF document
    */
-  function renderPDF(jsPDFCtor, menu, lay, fonts) {
-    var bleed = (menu.page.bleed || 0) * PT;
-    var W = lay.page.w + bleed * 2;
-    var H = lay.page.h + bleed * 2;
-
+  function newDocument(jsPDFCtor, menu, lay, fonts, W, H) {
     var pdf = new jsPDFCtor({ unit: 'pt', format: [W, H], compress: true });
     pdf.setProperties({
       title: (menu.meta && menu.meta.name) || 'Menu',
       creator: 'Menu Studio (spike)',
       subject: 'Print menu'
     });
-
     (fonts || []).forEach(function (f) {
       var vfsName = f.family + '-' + f.style + '.ttf';
       pdf.addFileToVFS(vfsName, f.b64);
       pdf.addFont(vfsName, f.family, f.style);
     });
+    return pdf;
+  }
+
+  function drawPage(pdf, menu, lay, W, H) {
+    var bleed = (menu.page.bleed || 0) * PT;
 
     // paper
     var paper = rgb(menu.theme.paper || '#FFFFFF');
@@ -96,8 +96,37 @@
     });
 
     if (menu.page.cropMarks) cropMarks(pdf, W, H, bleed);
+  }
+
+  function renderPDF(jsPDFCtor, menu, lay, fonts) {
+    var bleed = (menu.page.bleed || 0) * PT;
+    var W = lay.page.w + bleed * 2;
+    var H = lay.page.h + bleed * 2;
+    var pdf = newDocument(jsPDFCtor, menu, lay, fonts, W, H);
+    drawPage(pdf, menu, lay, W, H);
     return pdf;
   }
 
-  return { renderPDF: renderPDF, hexToRgb: hexToRgb };
+  /**
+   * Multi-page export: one sheet per page, same trim and crop marks.
+   * @param menus  array of menu models, one per page
+   * @param lays   array of engine.layout() results, index-matched
+   */
+  function renderPDFPages(jsPDFCtor, menus, lays, fonts) {
+    if (!menus || !menus.length) throw new Error('renderPDFPages needs at least one menu');
+    if (menus.length !== lays.length) throw new Error('menus and lays must match');
+    var first = menus[0];
+    var bleed = (first.page.bleed || 0) * PT;
+    var W = lays[0].page.w + bleed * 2;
+    var H = lays[0].page.h + bleed * 2;
+
+    var pdf = newDocument(jsPDFCtor, first, lays[0], fonts, W, H);
+    menus.forEach(function (menu, i) {
+      if (i > 0) pdf.addPage([W, H]);
+      drawPage(pdf, menu, lays[i], W, H);
+    });
+    return pdf;
+  }
+
+  return { renderPDF: renderPDF, renderPDFPages: renderPDFPages, hexToRgb: hexToRgb };
 });
