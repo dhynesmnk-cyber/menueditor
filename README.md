@@ -1,12 +1,16 @@
-# Menu Studio — fidelity spike
+# Menu Studio
 
-A browser-only editor for text menus, and the one piece of it that decides
-whether the product is trustworthy: **the PDF is drawn from the same layout
-decisions as the screen.**
+A browser-only editor for text menus. Two things it does that are worth the
+trouble:
+
+1. **The print PDF is drawn from the same layout decisions as the screen** —
+   the browser is never allowed to wrap text, so a line cannot break differently
+   in the editor and at the printer.
+2. **An existing menu gets in by pasting it** — parsed into sections, dishes,
+   descriptions, prices and dietary tags, with every price shown for review
+   before anything reaches the canvas.
 
 ## The architectural rule
-
-The browser is never allowed to wrap text.
 
 `src/engine.js` owns every layout decision. It decomposes each block into a flat
 **display list** of drawing primitives — text runs, leader dots, rules — in
@@ -27,23 +31,56 @@ breaks are decided before either renderer runs.
 
 No build step, no backend, no accounts. Fonts and jsPDF are vendored.
 
+## Import
+
+`Import` in the header opens a paste box. The parser (`src/import.js`) runs in
+node and the browser, so the code under test is the code in the app.
+
+What it understands:
+
+| Input shape | Result |
+|---|---|
+| `Charred Sourdough ...... 9` | dish + price (leader dots, tabs, 2+ spaces, spaced dashes, `$`) |
+| `Burrata (V, GF) .... 16` | brackets become dietary tags, not part of the name |
+| `Cultured butter, smoked salt` | line after a dish becomes its description |
+| `TO BEGIN` / `Small Plates:` / `Desserts` | section headings (caps, colons, known section words) |
+| `Larder & Vine` + `Dinner Menu` | menu title and subtitle, before the first section |
+| `(555) 213-8890`, `www.…` | routed to footnotes, never to dishes |
+| `V vegetarian · GF gluten free` | section or document note |
+
+**The price rule:** a line with a real separator (`….`, tab, dash, currency) is
+high confidence. A bare `Tomato Soup 8` is imported but flagged as *assumed*,
+and the warning says exactly which dish it guessed. Measurements are not prices
+— `Dry-Aged Ribeye, 14oz .... 62` keeps `14oz` in the name and reads `62`.
+
+The review pane lists every dish with an editable name and price field, colouring
+the prices that were assumed, plus warnings for duplicates, sections with no
+dishes, unusually high prices and lines that could not be classified. **Apply**
+is disabled until something parsed, and it keeps your existing page size and
+palette — an import never resets the design.
+
 ## Verify it
 
-    npm install                                        # fflate, needed by jsPDF's node build
-    node test/fidelity.js                              # model -> display list -> PDF
-    ~/.hermes/cache/scratch/pdfenv/bin/python -I test/verify.py   # glyph-level PDF check
+    npm install                    # fflate, needed by jsPDF's node build
+    npm test                       # parser corpus + end-to-end import + PDF
 
-The fidelity test re-renders the menu and writes `out/menu.pdf` plus
-`out/displaylist.json`, including the expected x position of **every glyph**.
-`verify.py` reopens the PDF with pymupdf and asserts each glyph of that run sits
-where the engine put it.
+Individually:
 
-    PASS — 656 glyphs, 37 runs, geometry identical
+    node test/parse.js             # 44 assertions over 9 real menu shapes
+    node test/import-e2e.js        # paste -> blocks -> layout -> out/imported.pdf
+    node test/fidelity.js          # demo menu -> out/menu.pdf
+    python3 test/syntax.py         # inline script parses, ids and assets resolve
+    .../python -I test/verify.py [pdf] [displaylist.json]   # glyph-level PDF check
+
+`fidelity.js` / `import-e2e.js` write a display list containing the expected x
+position of **every glyph**; `verify.py` reopens the PDF with pymupdf and asserts
+each glyph sits where the engine put it. Latest run:
+
+    PASS — 656 glyphs, 37 runs, geometry identical          (demo menu)
+    PASS — 558 glyphs, 29 runs, geometry identical          (7 dishes imported from pasted text)
       page size exact: 630.00 x 810.00 pt = 8.5x11 in trim + 0.125 in bleed
-      embedded: MGaramond, MLato
-      all 656 glyphs on target (max dx 0.120 pt)
-      37 text runs, each a single ordered baseline
-      content bottoms out at 9.902 in on a 11 in page (1.098 in bottom margin)
+      embedded: MCrimson, MLato
+      max drift 0.12–0.18 pt
 
 Screen-vs-PDF comparison (needs a browser capture in `out/screen.png`):
 
@@ -51,7 +88,11 @@ Screen-vs-PDF comparison (needs a browser capture in `out/screen.png`):
     .../python -I test/vshift.py                                  # per-run sub-pixel shift
     .../python -I test/zoom.py                                    # 1:1 stacked crops
 
-## Three bugs this spike exists to catch
+`test/syntax.py` exists because a headless browser is not always available on
+this box: it catches a broken inline script or a `getElementById` that points at
+an element nobody wrote, which is the class of bug a click-through would find.
+
+## Three fidelity bugs this hit, and their fixes
 
 1. **Kerning and ligatures.** Chrome applies them by default; jsPDF's advance
    model does not. Lines measured up to **1.81 pt wider in the PDF than on
@@ -61,7 +102,7 @@ Screen-vs-PDF comparison (needs a browser capture in `out/screen.png`):
    shorthand silently resets both — set longhands only.
 2. **The baseline model.** Canvas `fontBoundingBoxAscent` does **not** report
    the metrics Chrome uses for line boxes (0.833 em vs the TTF's 0.7993 em),
-   which put the 40 pt title 1.34 pt low. The ratio is now parsed from the font's
+   which put a 40 pt title 1.34 pt low. The ratio is now parsed from the font's
    own `hhea` / `OS/2` tables, honouring `USE_TYPO_METRICS`.
 3. **Measuring at the wrong scale.** A width self-check done at the current
    zoom reports pixel quantization, not fidelity. It now measures once at 1:1 in
@@ -86,23 +127,26 @@ so the repo is redistributable. The spike was originally built against the
 Monotype Garamond shipped with Chrome OS; it was replaced because that face
 cannot be redistributed in a public repo. Swapping faces means editing
 `FONTS` in `src/menu-model.js` and the matching `@font-face` block in
-`index.html` — nothing in the engine or exporter is font-specific, and the
-baseline ratio is re-derived from whatever TTF is loaded.
+`index.html` — nothing in the engine, the importer or the exporter is
+font-specific, and the baseline ratio is re-derived from whatever TTF loads.
 
 ## What is not built yet
 
-- **Import** (step 2): paste-and-parse, plus PDF/DOCX/photo extraction.
+- **File import**: `.docx`/`.pdf`/photo. Text extraction needs pdf.js (and
+  tesseract for photos) — the paste path proves the parser first.
 - **Section groups that reflow internally** when items are added, while the
-  group's box stays where it was dropped.
-- Font library + upload-your-own (needed for the "unlimited fonts" answer).
-- Web-link export, multi-page flow, project file save/load.
+  group's box stays where it was dropped. Today blocks are individually placed.
+- Multi-page flow when a menu outgrows one sheet (the importer reports overflow
+  but does not paginate).
+- Font library + upload-your-own, web-link export, project file save/load.
 
 ## Files
 
-    index.html            editor UI, screen renderer, live fidelity readout
+    index.html            editor UI, import review, screen renderer, fidelity readout
     src/engine.js         layout engine (node + browser, UMD)
+    src/import.js         menu-text parser (node + browser, UMD)
+    src/menu-model.js     document model, demo menu, parsed -> blocks builder
     src/pdf.js            PDF exporter — dumb consumer of the display list
-    src/menu-model.js     document model + demo menu (shared by app and tests)
     fonts/                Crimson Text + Lato, both SIL OFL 1.1 (see fonts/OFL-*.txt)
     vendor/               jsPDF 2.5.2 (umd + node)
-    test/                 fidelity, verify, compare, vshift, bbox, zoom, fontmetrics
+    test/                 parse corpus, import e2e, fidelity, verify, syntax, visual diffs

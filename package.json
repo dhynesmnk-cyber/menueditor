@@ -1,11 +1,15 @@
 {
   "name": "menueditor",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "private": true,
-  "description": "Menu editor spike — the screen and the print PDF are rendered from one display list",
+  "description": "Menu editor — text importer plus a screen and print renderer driven by one display list",
   "license": "MIT",
   "scripts": {
     "start": "python3 -m http.server 8791",
+    "test": "node test/parse.js && node test/import-e2e.js && node test/fidelity.js",
+    "test:parse": "node test/parse.js",
+    "test:e2e": "node test/import-e2e.js",
+    "test:pdf": "node test/fidelity.js",
     "pdf": "node test/fidelity.js"
   },
   "dependencies": {

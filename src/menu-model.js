@@ -1,12 +1,13 @@
 /* ============================================================================
-   The menu document model + the demo menu.
-   Shared verbatim by the browser app and the node fidelity test, so both
-   sides lay out byte-identical geometry.
+   The menu document model, the demo menu, and the builder that turns parsed
+   import text into canvas blocks.
+   Shared verbatim by the browser app and the node tests, so both sides lay out
+   byte-identical geometry.
 
-   Positions are inches, origin at the trim top-left. Vertical positions are
-   seed-stacked (measured with the engine, then the leftover space at the
-   bottom is distributed into the gaps so the column reaches the bottom
-   margin — the freeform blocks can be dragged anywhere afterwards).
+   Positions are inches, origin at the trim top-left. Blocks are stacked with
+   the engine's own measured heights, then the leftover space at the bottom is
+   distributed into the gaps so the column reaches the bottom margin (the
+   freeform blocks can be dragged anywhere afterwards).
    ========================================================================== */
 (function (root, factory) {
   if (typeof module === 'object' && module.exports) module.exports = factory();
@@ -40,7 +41,33 @@
   // column geometry (inches)
   var COL_X = 1.45, COL_W = 5.6, TOP = 1.08, BOTTOM = 10.0;
 
-  function items() {
+  /**
+   * Measure every block with the engine, stack from `top`, then spread the
+   * leftover space into the gaps by weight so the column lands on `bottom`.
+   */
+  function stackBlocks(engine, th, blocks, gaps, top, bottom) {
+    var heights = blocks.map(function (b) { return engine.layoutBlock(b, th).h / 72; });
+    var used = 0, i;
+    for (i = 0; i < blocks.length; i++) used += heights[i] + (gaps[i] ? gaps[i].gap : 0);
+
+    var slack = (bottom - top) - used;
+    var totalWeight = 0;
+    for (i = 0; i < gaps.length; i++) totalWeight += gaps[i].weight || 1;
+    if (!totalWeight) totalWeight = 1;
+
+    var cursor = top;
+    for (i = 0; i < blocks.length; i++) {
+      blocks[i].y = cursor;
+      cursor += heights[i];
+      if (i < blocks.length - 1) {
+        var g = gaps[i] || { gap: 0, weight: 1 };
+        cursor += g.gap + (slack > 0 ? slack * (g.weight || 1) / totalWeight : 0);
+      }
+    }
+    return { overflowIn: Math.max(0, -slack), slackIn: slack };
+  }
+
+  function demoItems() {
     return [
       {
         section: 'To Begin',
@@ -74,8 +101,7 @@
    */
   function buildMenu(engine) {
     var th = THEME;
-    var blocks = [];
-    var gaps = [];   // {i: blockIndex, weight} — shareable vertical slack
+    var blocks = [], gaps = [];
 
     function push(spec, gapAfter, weight) {
       spec.id = 'b' + blocks.length;
@@ -83,7 +109,7 @@
       spec.w = spec.w == null ? COL_W : spec.w;
       spec.y = 0;
       blocks.push(spec);
-      gaps.push({ i: blocks.length - 1, gap: gapAfter || 0, weight: weight || 1 });
+      gaps.push({ gap: gapAfter || 0, weight: weight || 1 });
     }
 
     push({ type: 'kicker', text: 'Wood fired  ·  Seasonal', size: 7, tracking: 2.6 }, 0.06, 0.5);
@@ -91,47 +117,100 @@
     push({ type: 'rule', x: (8.5 - 1.15) / 2, w: 1.15, weight: 1.1, color: th.accent }, 0.1, 0.4);
     push({ type: 'subtitle', text: 'Dinner  ·  Tuesday to Sunday', size: 9.2, tracking: 1.4 }, 0.3, 1);
 
-    var menu = items();
-    for (var s = 0; s < menu.length; s++) {
-      var g = menu[s];
+    demoItems().forEach(function (g) {
       push({ type: 'section', text: g.section, size: 8.2, tracking: 2.4 }, 0.2, 1.5);
-      for (var d = 0; d < g.dishes.length; d++) {
-        var dish = g.dishes[d];
+      g.dishes.forEach(function (dish) {
         push({
           type: 'item', name: dish.name, desc: dish.desc, price: dish.price,
           tags: dish.tags, size: 12.6, descSize: 8.2
         }, 0.17, 1);
-      }
-    }
+      });
+    });
+
     push({ type: 'note', text: 'V vegetarian  ·  GF gluten free  —  please tell us about any allergies', size: 7, tracking: 0.5 }, 0, 2);
 
-    // ---- measure, stack, then justify to the bottom margin ----
-    var cursor = TOP;
-    var heights = blocks.map(function (b) { return engine.layoutBlock(b, th).h / 72; });
-
-    var used = 0;
-    for (var i = 0; i < blocks.length; i++) used += heights[i] + gaps[i].gap;
-
-    var slack = (BOTTOM - TOP) - used;
-    var totalWeight = gaps.reduce(function (a, g) { return a + g.weight; }, 0);
-
-    cursor = TOP;
-    for (var j = 0; j < blocks.length; j++) {
-      blocks[j].y = cursor;
-      cursor += heights[j];
-      if (j < blocks.length - 1) {
-        var extra = slack > 0 ? (slack * gaps[j].weight / totalWeight) : 0;
-        cursor += gaps[j].gap + extra;
-      }
-    }
+    var fit = stackBlocks(engine, th, blocks, gaps, TOP, BOTTOM);
 
     return {
       meta: { name: 'Larder & Vine — Dinner', version: 1 },
       page: { unit: 'in', w: 8.5, h: 11, bleed: 0.125, cropMarks: true },
       theme: th,
-      blocks: blocks
+      blocks: blocks,
+      overflowIn: fit.overflowIn
     };
   }
 
-  return { buildMenu: buildMenu, FONTS: FONTS, THEME: THEME, COL_X: COL_X, COL_W: COL_W };
+  /**
+   * Turn a parsed import into blocks, keeping the caller's page and theme so an
+   * import never resets the design.
+   * @returns { menu, overflowIn }
+   */
+  function buildMenuFromParsed(engine, parsed, opts) {
+    opts = opts || {};
+    var th = opts.theme || THEME;
+    var page = opts.page || { unit: 'in', w: 8.5, h: 11, bleed: 0.125, cropMarks: true };
+    var colW = opts.colW || COL_W;
+    var colX = opts.colX != null ? opts.colX : (page.w - colW) / 2;
+
+    var pageOut = {
+      unit: page.unit || 'in', w: page.w, h: page.h,
+      bleed: page.bleed, cropMarks: page.cropMarks
+    };
+
+    var top = opts.top != null ? opts.top : 1.05;
+    var bottom = opts.bottom != null ? opts.bottom : page.h - 1.0;
+
+    var blocks = [], gaps = [];
+    function push(spec, gapAfter, weight) {
+      spec.id = 'b' + blocks.length;
+      spec.x = spec.x == null ? colX : spec.x;
+      spec.w = spec.w == null ? colW : spec.w;
+      spec.y = 0;
+      blocks.push(spec);
+      gaps.push({ gap: gapAfter || 0, weight: weight || 1 });
+    }
+
+    if (parsed.title) {
+      push({ type: 'title', text: parsed.title, size: 38, tracking: 1.2 }, 0.02, 0.6);
+      push({ type: 'rule', x: colX + (colW - 1.15) / 2, w: 1.15, weight: 1.1, color: th.accent }, 0.08, 0.4);
+    }
+    if (parsed.subtitle) {
+      push({ type: 'subtitle', text: parsed.subtitle, size: 9.2, tracking: 1.2 }, 0.28, 1);
+    }
+
+    (parsed.sections || []).forEach(function (s) {
+      push({ type: 'section', text: s.title, size: 8.2, tracking: 2.2 }, 0.18, 1.4);
+      (s.items || []).forEach(function (it) {
+        push({
+          type: 'item', name: it.name, desc: it.desc || '', price: it.price,
+          tags: it.tags || [], size: 12.4, descSize: 8.2
+        }, 0.16, 1);
+      });
+      if (s.note) push({ type: 'note', text: s.note, size: 7, tracking: 0.4 }, 0.14, 0.8);
+    });
+
+    var allNotes = (parsed.notes || []).join('   ·   ');
+    if (allNotes) push({ type: 'note', text: allNotes, size: 7, tracking: 0.5 }, 0, 1.5);
+
+    var fit = stackBlocks(engine, th, blocks, gaps, top, bottom);
+
+    return {
+      menu: {
+        meta: { name: (parsed.title || 'Imported menu'), version: 1 },
+        page: pageOut,
+        theme: th,
+        blocks: blocks
+      },
+      overflowIn: fit.overflowIn
+    };
+  }
+
+  return {
+    buildMenu: buildMenu,
+    buildMenuFromParsed: buildMenuFromParsed,
+    stackBlocks: stackBlocks,
+    demoItems: demoItems,
+    FONTS: FONTS, THEME: THEME,
+    COL_X: COL_X, COL_W: COL_W, TOP: TOP, BOTTOM: BOTTOM
+  };
 });

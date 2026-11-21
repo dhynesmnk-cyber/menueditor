@@ -1,18 +1,58 @@
-"""Extract the inline app script from index.html and syntax-check it with node."""
+"""Static checks for the single-page app, since a headless browser is not
+always available on this box:
+
+1. the inline script must parse (node --check)
+2. every element id the script looks up must exist in the markup
+3. every asset the page references must exist on disk
+"""
 import re
 import subprocess
 import sys
+from pathlib import Path
 
-html = open("index.html").read()
+ROOT = Path(__file__).resolve().parent.parent
+html = (ROOT / "index.html").read_text()
+
 blocks = re.findall(r"<script>(.*?)</script>", html, re.S)
-print(f"inline script blocks: {len(blocks)}")
 src = "\n".join(blocks)
-open("out/app-inline.js", "w").write(src)
-r = subprocess.run(["node", "--check", "out/app-inline.js"], capture_output=True, text=True)
-print("node --check:", "OK" if r.returncode == 0 else "FAILED")
-if r.returncode:
-    print(r.stderr[:2000])
-    sys.exit(1)
+out = ROOT / "out" / "app-inline.js"
+out.parent.mkdir(exist_ok=True)
+out.write_text(src)
 
-# also report the line count and any obvious leftovers
-print(f"lines: {src.count(chr(10)) + 1}")
+fails = []
+
+r = subprocess.run(["node", "--check", str(out)], capture_output=True, text=True)
+if r.returncode != 0:
+    tail = (r.stderr.strip().splitlines() or ["syntax error"])[-1]
+    fails.append("syntax: " + tail)
+else:
+    print(f"  ok    inline script parses ({src.count(chr(10)) + 1} lines)")
+
+# ---- ids referenced by the script vs ids defined in the markup
+referenced = set(re.findall(r"getElementById\(\s*'([^']+)'\s*\)", src))
+referenced |= set(re.findall(r"querySelector\(\s*'#([A-Za-z0-9_-]+)'", src))
+defined = set(re.findall(r'\bid="([^"]+)"', html))
+
+missing = sorted(referenced - defined)
+if missing:
+    fails.append("script references ids missing from the markup: " + ", ".join(missing))
+else:
+    print(f"  ok    all {len(referenced)} referenced element ids exist")
+
+# ---- assets referenced vs files present
+assets = set(re.findall(r'(?:src|href)="((?!http)[^"]+)"', html))
+assets |= set(re.findall(r"url\('([^']+)'\)", html))
+assets |= set(re.findall(r"fetch\('([^']+)'", src))
+missing_assets = sorted(
+    a for a in assets if not a.startswith("data:") and not (ROOT / a).exists()
+)
+if missing_assets:
+    fails.append("missing assets: " + ", ".join(missing_assets))
+else:
+    print(f"  ok    all {len(assets)} referenced assets exist")
+
+if fails:
+    for f in fails:
+        print("  FAIL  " + f)
+    sys.exit(1)
+print("PASS — markup, script and assets agree")

@@ -17,10 +17,10 @@ import pymupdf
 TOL_X = 0.4   # pt
 TOL_Y = 0.4   # pt
 
-with open("out/displaylist.json") as fh:
+with open(sys.argv[2] if len(sys.argv) > 2 else "out/displaylist.json") as fh:
     data = json.load(fh)
 
-doc = pymupdf.open("out/menu.pdf")
+doc = pymupdf.open(sys.argv[1] if len(sys.argv) > 1 else "out/menu.pdf")
 page = doc[0]
 ok, fails = [], []
 
