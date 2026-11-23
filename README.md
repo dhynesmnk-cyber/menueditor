@@ -183,6 +183,28 @@ left alone. The 44-check paste corpus is the regression gate for it.
 
 Verified: 126 checks across five suites.
 
+## Dragging
+
+`pointermove` used to call `relayout()`, which lays out the whole document and
+rebuilds every DOM node. On a 100-dish menu that is **417 primitives + 106 overlay
+divs + 106 sidebar buttons** destroyed and recreated — plus a 311-run width
+re-measure — for every mouse event, to move one block a few pixels.
+
+A drag now moves pixels. Each primitive carries the id of the block that drew it
+(`engine.layout`), `drawSheet` indexes the created nodes by that id, and pointer
+movement sets one `transform` per primitive of the dragged block, coalesced to one
+per animation frame. The document is re-laid-out **once, on pointer release**.
+
+Measured on the same 100-dish menu: **4 transforms + 1 overlay per frame**, instead
+of 629 nodes rebuilt.
+
+The index is only built when the created nodes are 1:1 with the display list; if
+they are not, dragging falls back to a full relayout rather than moving the wrong
+pixels. `test/block-index.js` asserts the invariants that index depends on: every
+primitive carries its block id, every id belongs to a real block, a block's
+primitives stay contiguous, and moving a block does not change the primitive count.
+Held arrow keys coalesce through `requestRelayout()` for the same reason.
+
 ## Verify it
 
     npm install                    # fflate, needed by jsPDF's node build
@@ -195,6 +217,7 @@ Individually:
     node test/design.js            # palette/page/margins on the 3 reference menus
     node test/planner.js           # reference grid -> plan -> placed blocks
     node test/pagination.js        # dense menu -> 2 sheets -> 2-page PDF
+    node test/block-index.js       # display list -> DOM index invariants (drag path)
     node test/layout-test.js       # word boxes -> columns -> copy (PDF; OCR with a worker)
     node test/import-e2e.js        # paste -> blocks -> layout -> out/imported.pdf
     node test/fidelity.js          # demo menu -> out/menu.pdf

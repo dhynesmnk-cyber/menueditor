@@ -7,11 +7,12 @@
   "scripts": {
     "start": "python3 -m http.server 8791",
     "ocr": ".ocr/bin/python ocr/server.py",
-    "test": "node test/parse.js && node test/parse-inline.js && node test/design.js && node test/planner.js && node test/pagination.js && node test/import-e2e.js && node test/fidelity.js",
+    "test": "node test/parse.js && node test/parse-inline.js && node test/design.js && node test/planner.js && node test/pagination.js && node test/block-index.js && node test/import-e2e.js && node test/fidelity.js",
     "test:parse": "node test/parse.js",
     "test:inline": "node test/parse-inline.js",
     "test:planner": "node test/planner.js",
     "test:pages": "node test/pagination.js",
+    "test:drag": "node test/block-index.js",
     "test:design": "node test/design.js",
     "test:layout": "node test/layout-test.js",
     "test:e2e": "node test/import-e2e.js",

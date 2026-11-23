@@ -361,6 +361,16 @@ function relayout() {
   drawFidelity();
 }
 
+// Coalesce relayouts that can fire faster than the screen refreshes (held arrow
+// keys, dragging a slider). The layout pass is ~2ms; doing it 120 times a second
+// for one keystroke is waste.
+let relayoutTick = false;
+function requestRelayout() {
+  if (relayoutTick) return;
+  relayoutTick = true;
+  requestAnimationFrame(() => { relayoutTick = false; relayout(); });
+}
+
 function drawSheet() {
   const lay = state.lay, m = state.menu;
   const s = state.zoomScale;
@@ -419,6 +429,24 @@ function drawSheet() {
     }
   });
 
+  // Index the nodes we just built by block id, so a drag can move one block's
+  // pixels instead of re-laying-out the document. Only valid when the created
+  // nodes are 1:1 with the display list; if they are not, dragging falls back
+  // to a full relayout rather than moving the wrong thing.
+  const kids = layer.children;
+  if (kids.length === lay.displayList.length) {
+    const byBlock = new Map();
+    for (let i = 0; i < kids.length; i++) {
+      const id = lay.displayList[i].id;
+      if (id == null) continue;
+      if (!byBlock.has(id)) byBlock.set(id, []);
+      byBlock.get(id).push(kids[i]);
+    }
+    state.byBlock = byBlock;
+  } else {
+    state.byBlock = null;
+  }
+
   requestAnimationFrame(measureWidths);
 }
 
@@ -462,6 +490,7 @@ function measureWidths() {
 function drawOverlays() {
   const s = state.zoomScale, wrap = document.getElementById('overlays');
   wrap.innerHTML = '';
+  const byId = new Map();
   state.lay.bounds.forEach(b => {
     const d = document.createElement('div');
     d.className = 'bound' + (b.id === state.sel ? ' sel' : '');
@@ -472,7 +501,9 @@ function drawOverlays() {
     d.dataset.id = b.id;
     d.addEventListener('pointerdown', onDragStart);
     wrap.appendChild(d);
+    byId.set(b.id, d);
   });
+  state.boundById = byId;
 }
 
 function drawList() {
@@ -521,14 +552,45 @@ function onDragStart(ev) {
   const s = state.zoomScale;
   const b = state.menu.blocks.find(x => x.id === id);
   const start = { px: ev.clientX, py: ev.clientY, x: b.x, y: b.y };
-  const move = e => {
-    b.x = +(start.x + (e.clientX - start.px) / (s * PT)).toFixed(3);
-    b.y = +(start.y + (e.clientY - start.py) / (s * PT)).toFixed(3);
-    relayout();
+
+  // A drag is a transform per frame, not a re-layout per frame. The engine is
+  // asked to lay the document out exactly once, on release.
+  const nodes = state.byBlock ? (state.byBlock.get(id) || []) : null;
+  const bound = state.boundById ? state.boundById.get(id) : ev.currentTarget;
+  let dx = 0, dy = 0, ticking = false;
+
+  const paint = () => {
+    const t = 'translate(' + dx + 'px,' + dy + 'px)';
+    if (nodes) nodes.forEach(n => { n.style.transform = t; });
+    if (bound) bound.style.transform = t;
   };
+
+  const move = e => {
+    dx = e.clientX - start.px;
+    dy = e.clientY - start.py;
+    if (!ticking) {
+      ticking = true;
+      requestAnimationFrame(() => { ticking = false; paint(); });
+    }
+  };
+
   const up = () => {
     window.removeEventListener('pointermove', move);
     window.removeEventListener('pointerup', up);
+    if (bound) bound.style.transform = '';
+    if (!nodes) {                       // no node index: fall back to a full relayout
+      b.x = +(start.x + dx / (s * PT)).toFixed(3);
+      b.y = +(start.y + dy / (s * PT)).toFixed(3);
+      relayout();
+      return;
+    }
+    nodes.forEach(n => { n.style.transform = ''; });
+    const nx = +(start.x + dx / (s * PT)).toFixed(3);
+    const ny = +(start.y + dy / (s * PT)).toFixed(3);
+    if (nx !== start.x || ny !== start.y) {
+      b.x = nx; b.y = ny;
+      relayout();                       // one relayout, on release
+    }
   };
   window.addEventListener('pointermove', move);
   window.addEventListener('pointerup', up);
@@ -678,10 +740,10 @@ document.addEventListener('keydown', e => {
   const b = state.menu && state.menu.blocks.find(x => x.id === state.sel);
   if (!b || e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA') return;
   const step = (e.shiftKey ? 10 : 1) / PT;
-  if (e.key === 'ArrowUp') { b.y -= step; relayout(); e.preventDefault(); }
-  if (e.key === 'ArrowDown') { b.y += step; relayout(); e.preventDefault(); }
-  if (e.key === 'ArrowLeft') { b.x -= step; relayout(); e.preventDefault(); }
-  if (e.key === 'ArrowRight') { b.x += step; relayout(); e.preventDefault(); }
+  if (e.key === 'ArrowUp') { b.y -= step; requestRelayout(); e.preventDefault(); }
+  if (e.key === 'ArrowDown') { b.y += step; requestRelayout(); e.preventDefault(); }
+  if (e.key === 'ArrowLeft') { b.x -= step; requestRelayout(); e.preventDefault(); }
+  if (e.key === 'ArrowRight') { b.x += step; requestRelayout(); e.preventDefault(); }
 });
 
 // ---- pages ---------------------------------------------------------------

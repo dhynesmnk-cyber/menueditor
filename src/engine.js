@@ -256,7 +256,13 @@
       for (var i = 0; i < blocks.length; i++) {
         var b = blocks[i];
         var r = layoutBlock(b, th);
-        for (var k = 0; k < r.els.length; k++) dl.push(r.els[k]);
+        for (var k = 0; k < r.els.length; k++) {
+          var el = r.els[k];
+          // which block drew this primitive — lets the canvas move one block's
+          // pixels without re-laying out the whole document
+          el.id = b.id;
+          dl.push(el);
+        }
         bounds.push({
           id: b.id, type: b.type, x: pt(b.x), y: pt(b.y),
           w: pt(b.w), h: Math.max(r.h, 8)

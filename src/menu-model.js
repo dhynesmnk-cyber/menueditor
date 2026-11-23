@@ -267,7 +267,7 @@
     opts = opts || {};
     var plan = opts.plan;
     if (!plan || !plan.pages || !(plan.pageCount > 1)) {
-      return [buildMenuFromParsed(engine, parsed, opts)];
+      return [buildMenuFromParsed(engine, parsed, opts).menu];
     }
     return plan.pages.map(function (pg, i) {
       var subPlan = Object.assign({}, plan, {
