@@ -302,14 +302,21 @@
         return s && (s.items || []).length;
       });
       var pages = paginate(spec, best.columns, secs, best.typeScale);
-      if (pages.length > 1) {
+      if (pages.length) {
+        // Take the paginated layout even when it produced a SINGLE sheet: its
+        // fill-to-the-bottom packing is what fits, and the balancing pass that
+        // overflowed must not be kept just because the page count is one.
         best.pages = pages;
         best.pageCount = pages.length;
         best.sections = pages[0].sections;
         best.fills = pages[0].fills;
-        best.overflowIn = 0;
-        best.fits = true;
-        best.paginated = true;
+        best.paginated = pages.length > 1;
+        var topIn = topFor(spec, best.typeScale);
+        var bottomIn = spec.bottom == null ? spec.page.h - 0.9 : spec.bottom;
+        var overFirst = pages[0].fills.reduce(function (m, f) {
+          return Math.max(m, topIn + f.height - bottomIn); }, 0);
+        best.overflowIn = Math.max(0, +overFirst.toFixed(2));
+        best.fits = best.overflowIn <= 0.02;
       }
     }
 

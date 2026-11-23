@@ -154,20 +154,51 @@
       merged.forEach(function (s) { segments.push(s); });
     });
 
+    // A letter-spaced heading arrives as ONE run whose text has spaces between
+    // the letters ("C H A A T / S T R E E T S N A C K S"), so the words cannot
+    // be rejoined by their box gaps — collapse the letters inside the run.
+    function deLetterSpace(s) {
+      var toks = String(s).split(/\s+/).filter(Boolean);
+      if (toks.length < 3) return s;
+      var singles = toks.filter(function (t) { return t.length === 1; }).length;
+      if (singles < toks.length * 0.6) return s;
+      return toks.join('').replace(/([\/·—–])/g, ' $1 ').replace(/\s{2,}/g, ' ').trim();
+    }
+
     function segText(seg) {
-      var parts = seg.words.map(function (w) { return w.text.trim(); });
+      var ws = seg.words;
+      var parts = ws.map(function (w) { return deLetterSpace(w.text.trim()); });
       if (seg.leaderAt != null) {
         return parts.slice(0, seg.leaderAt).join(' ') + ' …… ' +
                parts.slice(seg.leaderAt).join(' ');
       }
+
+      // A letter-spaced heading arrives one character per box ("C H A A T").
+      // Join the letters, and put a space back only where the gap is clearly
+      // wider than the letter spacing.
+      var singles = ws.filter(function (w) { return w.text.trim().length === 1; }).length;
+      if (ws.length >= 4 && singles >= ws.length * 0.6) {
+        var gaps = [];
+        for (var i = 1; i < ws.length; i++) gaps.push(ws[i].x - (ws[i - 1].x + ws[i - 1].w));
+        var sorted = gaps.slice().sort(function (a, b) { return a - b; });
+        var medGap = sorted[Math.floor(sorted.length / 2)] || 1;
+        var out = parts[0];
+        for (var j = 1; j < ws.length; j++) {
+          var tok = parts[j];
+          var wide = gaps[j - 1] > medGap * 1.9 || /^[\/·—–]$/.test(tok) || /[\/·—–]$/.test(parts[j - 1]);
+          out += wide ? ' ' + tok : tok;
+        }
+        return out.replace(/\s{2,}/g, ' ').trim();
+      }
       return parts.join(' ');
     }
 
-    // ---- 3. columns from a vertical whitespace projection. Left-edge clustering
-    // fails on centred headings (each one is its own "left edge") and overlap
-    // clustering chains neighbours together. Projecting every text box onto the
-    // x-axis and looking for gutters is the method that survives both — it is
-    // what a typesetter's eye does: columns are the bands between the gaps.
+    // ---- 3. columns come from where text STARTS.
+    // A whitespace projection works on a clean grid and fails on a real menu:
+    // section rules, boxed panels and centred headings all bridge the gutter, so
+    // no x-band is ever empty (measured: a four-zone A4 menu produced zero empty
+    // bins and was read as one column). But a column is a place text starts, and
+    // the items in it share a left edge.
     var pageW = Math.max.apply(null, segments.map(function (s) { return s.right; })) || 1;
     var yMin = Math.min.apply(null, segments.map(function (s) { return s.cy; }));
     var yMax = Math.max.apply(null, segments.map(function (s) { return s.cy; }));
@@ -175,59 +206,52 @@
 
     // mastheads and full-width rules are not column evidence
     var candidates = segments.filter(function (s) {
-      return (s.right - s.left) < pageW * 0.35 && s.cy >= bodyTop;
+      return (s.right - s.left) < pageW * 0.42 && s.cy >= bodyTop;
     });
     if (candidates.length < 2) candidates = segments.slice();
 
-    var minLeft = Math.min.apply(null, candidates.map(function (s) { return s.left; }));
-    var maxRight = Math.max.apply(null, candidates.map(function (s) { return s.right; }));
-    var spanW = Math.max(1, maxRight - minLeft);
-    var NB = 512;
-    var bins = new Int32Array(NB);
+    var BIN = 4;
+    var hist = {};
     candidates.forEach(function (s) {
-      var a = Math.floor(((s.left - minLeft) / spanW) * (NB - 1));
-      var b = Math.floor(((s.right - minLeft) / spanW) * (NB - 1));
-      for (var i = Math.max(0, a); i <= Math.min(NB - 1, b); i++) bins[i]++;
+      var k = Math.round(s.left / BIN);
+      hist[k] = (hist[k] || 0) + 1;
     });
 
-    var runs = [], open = -1;
-    for (var bi = 0; bi < NB; bi++) {
-      if (bins[bi] > 0 && open < 0) open = bi;
-      else if (bins[bi] === 0 && open >= 0) { runs.push([open, bi - 1]); open = -1; }
-    }
-    if (open >= 0) runs.push([open, NB - 1]);
-
-    // a gap narrower than ~1% of the page is word spacing, not a gutter
-    var gutterMin = Math.max(2, Math.round(NB * 0.010));
-    var bands = [];
-    runs.forEach(function (r) {
-      var last = bands[bands.length - 1];
-      if (last && r[0] - last[1] - 1 < gutterMin) last[1] = r[1];
-      else bands.push([r[0], r[1]]);
+    // smooth over +/-2 bins: right-aligned text scatters across a few points
+    var peaks = [];
+    Object.keys(hist).forEach(function (k) {
+      var n = 0;
+      for (var d = -2; d <= 2; d++) n += hist[+k + d] || 0;
+      peaks.push({ left: +k * BIN, n: n });
     });
+    peaks.sort(function (a, b) { return a.left - b.left; });
 
-    var toX = function (bin) { return minLeft + (bin / (NB - 1)) * spanW; };
-    var columns = bands.map(function (b) {
-      return { left: toX(b[0]), right: toX(b[1]), segments: [] };
+    // 6% of segments is enough to be a column, and still too many for a centred
+    // heading (which appears once) to qualify
+    var minCount = Math.max(3, Math.round(candidates.length * 0.06));
+    var minSep = pageW * 0.08;
+    var anchors = [];
+    peaks.forEach(function (p) {
+      if (p.n < minCount) return;
+      var last = anchors[anchors.length - 1];
+      if (last && p.left - last.left < minSep) {
+        if (p.n > last.n) { last.left = p.left; last.n = p.n; }
+      } else {
+        anchors.push({ left: p.left, n: p.n });
+      }
     });
-    // drop slivers (a stray price or a page number)
-    columns = columns.filter(function (c) {
-      return (c.right - c.left) > spanW * 0.06;
-    });
-    if (!columns.length) {
-      columns = [{ left: minLeft, right: maxRight, segments: [] }];
-    }
+    if (!anchors.length) anchors = [{ left: pageW * 0.06, n: candidates.length }];
 
-    // every segment belongs to the column it overlaps most; the column's
-    // geometry stays what the gutters said, so bands cannot overlap each other
+    var columns = anchors.map(function (a) {
+      return { left: a.left, right: a.left + pageW * 0.12, segments: [] };
+    });
     segments.forEach(function (seg) {
-      var best = null, bestOverlap = -1;
-      columns.forEach(function (c) {
-        var ov = Math.min(c.right, seg.right) - Math.max(c.left, seg.left);
-        if (ov > bestOverlap) { bestOverlap = ov; best = c; }
-      });
-      if (!best) best = columns[columns.length - 1];
-      best.segments.push(seg);
+      var best = 0;
+      for (var i = 0; i < columns.length; i++) {
+        if (columns[i].left <= seg.left + minSep * 0.5) best = i;
+      }
+      columns[best].segments.push(seg);
+      columns[best].right = Math.max(columns[best].right, seg.right);
     });
     columns = columns.filter(function (c) { return c.segments.length; });
     columns.sort(function (a, b) { return a.left - b.left; });

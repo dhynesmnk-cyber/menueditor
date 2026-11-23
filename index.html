@@ -771,6 +771,13 @@ function blockHeightFn(section, width, pattern, ts) {
 }
 
 function planAndBuild(parsed) {
+  // adopt the reference's sheet size before planning, so columns are measured
+  // against the page they will actually be printed on
+  if (designRef && designRef.pageSize) {
+    state.menu.page.w = designRef.pageSize.w;
+    state.menu.page.h = designRef.pageSize.h;
+    bindPage();
+  }
   const page = state.menu.page;
   // the masthead occupies real height; the planner has to start columns below it
   const masthead = parsed.title ? 1.85 : (parsed.subtitle ? 0.9 : 0);
@@ -995,9 +1002,11 @@ async function importPdf(file) {
   const doc = await pdfjsLib.getDocument({ data: new Uint8Array(buf) }).promise;
   const words = [];
   const pageHeight = [];
+  let firstW = 0, firstH = 0;
   for (let p = 1; p <= doc.numPages; p++) {
     const page = await doc.getPage(p);
     const vp = page.getViewport({ scale: 1 });
+    if (p === 1) { firstW = vp.width; firstH = vp.height; }
     pageHeight.push(vp.height);
     const tc = await page.getTextContent();
     const offset = (p - 1) * 1e5;
@@ -1023,6 +1032,8 @@ async function importPdf(file) {
   pending = MenuImport.parse(laid.text);
   designRef = designRef || {};
   designRef.columns = laid.columns;      // the reference's grid, for the planner
+  // the reference's sheet size too — an A4 menu laid out on Letter is already wrong
+  designRef.pageSize = { w: +(firstW / PT).toFixed(2), h: +(firstH / PT).toFixed(2) };
   renderPreview();
 
   const panel = document.getElementById('designPanel');

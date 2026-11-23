@@ -182,6 +182,22 @@
     return null;
   }
 
+  // Items here are set "PANI PURI 14 V" — the price is followed by dietary
+  // markers, so a trailing-number rule alone misses every one of them.
+  var TAG_TOKEN = 'V|VG|VO|VE|VEG|GF|DF|NF|EF|SF|MF|N|NN|S|SP|HOT|SPICY|RAW';
+  var TAG_TAIL_RE = new RegExp(
+    '\\s+((?:' + TAG_TOKEN + ')(?:\\s*[\\/&,]\\s*(?:' + TAG_TOKEN + '))*)$', 'i'
+  );
+
+  function stripTailTags(line) {
+    var m = String(line).match(TAG_TAIL_RE);
+    if (!m) return { text: line, tags: [] };
+    return {
+      text: String(line).slice(0, m.index).replace(/\s+$/, ''),
+      tags: m[1].split(/\s*[\/&,]\s*/).filter(Boolean)
+    };
+  }
+
   function sectionScore(line) {
     var t = String(line).trim();
     if (!t || t.length > 42) return 0;
@@ -235,6 +251,12 @@
       var trimmed = lines[i].replace(/\s+$/, '').trim();
       if (!trimmed) { lastItem = null; continue; }
 
+      // pull dietary markers off the end before anything else looks at the line
+      var tail = stripTailTags(trimmed);
+      var tailTags = tail.tags;
+      if (tailTags.length && tail.text) trimmed = tail.text;
+      else tailTags = [];
+
       if (/^[-=_*~·—–]{3,}$/.test(trimmed)) { lastItem = null; continue; }
 
       if (CONTACT_RE.test(trimmed)) {
@@ -276,7 +298,8 @@
           warn('warn', 'Duplicate dish name "' + name + '" — pasted twice?', trimmed);
         }
         lastItem = {
-          name: name, desc: inline ? inline.desc : '', price: price, tags: tagRes.tags,
+          name: name, desc: inline ? inline.desc : '', price: price,
+          tags: (tagRes.tags || []).concat(tailTags.map(function (t) { return t.toUpperCase(); })),
           _conf: priced.conf, _line: i + 1
         };
         cur.items.push(lastItem);
