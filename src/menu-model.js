@@ -192,13 +192,16 @@
 
       var startY = parsed.title ? headY + 1.85 * ts : (parsed.subtitle ? headY + 0.9 * ts : 1.0);
       var cursor = cols.map(function () { return startY; });
+      var groups = [];
 
       plan.sections.forEach(function (ps) {
         var ci = Math.min(ps.col, cols.length - 1);
         var x = cols[ci].x, w = cols[ci].w;
         var y = cursor[ci];
+        var from = blocks.length;
 
-        push({ type: 'section', text: ps.title, size: 8.2 * ts, tracking: 2.2, x: x, w: w, y: y }, 0, 1);
+        push({ type: 'section', text: ps.continued ? ps.title + ' (cont.)' : ps.title,
+               size: 8.2 * ts, tracking: 2.2, x: x, w: w, y: y }, 0, 1);
         y += engine.layoutBlock(blocks[blocks.length - 1], th).h / 72 + 0.10 * ts;
 
         ps.items.forEach(function (it) {
@@ -210,6 +213,23 @@
         });
 
         cursor[ci] = y + 0.16 * ts;
+        groups.push({ col: ci, from: from, to: blocks.length - 1 });
+      });
+
+      // Spread the leftover height between sections, as the single-column path
+      // does: a short menu should sit in the room it has, not float at the top
+      // of the sheet with a void beneath it.
+      cols.forEach(function (c, ci) {
+        var mine = groups.filter(function (g) { return g.col === ci; });
+        if (!mine.length) return;
+        var slack = bottom - cursor[ci];
+        if (slack <= 0.01) return;
+        var extra = slack / mine.length;
+        mine.forEach(function (g, j) {
+          if (!j) return;
+          for (var k = g.from; k <= g.to; k++) blocks[k].y += extra * j;
+        });
+        cursor[ci] = bottom;
       });
 
       var over = Math.max.apply(null, cursor.map(function (y) { return y - bottom; }));

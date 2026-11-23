@@ -772,11 +772,14 @@ function blockHeightFn(section, width, pattern, ts) {
 
 function planAndBuild(parsed) {
   const page = state.menu.page;
+  // the masthead occupies real height; the planner has to start columns below it
+  const masthead = parsed.title ? 1.85 : (parsed.subtitle ? 0.9 : 0);
   const plan = MenuPlanner.plan({
     parsed: parsed,
     page: page,
     reference: designRef && designRef.columns ? { columns: designRef.columns } : null,
-    top: 1.05,
+    top: 0.55,
+    mastheadIn: masthead,
     bottom: page.h - 0.8,
     measure: measureFn,
     blockHeight: blockHeightFn

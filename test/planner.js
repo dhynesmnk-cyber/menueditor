@@ -74,7 +74,9 @@ const allPlaced = plan.pages
   : plan.sections.map(s => ({ ...s, page: 0 }));
 const byPlacement = allPlaced.slice().sort((a, b) => a.page - b.page || a.col - b.col || a.y - b.y);
 const sourceOrder = parsed.sections.filter(s => (s.items || []).length).map(s => s.title);
-const placedOrder = byPlacement.map(s => s.title);
+// a long section may continue onto the next sheet, so compare first occurrences
+const placedOrder = [];
+byPlacement.forEach(s => { if (placedOrder.indexOf(s.title) === -1) placedOrder.push(s.title); });
 ok(JSON.stringify(sourceOrder) === JSON.stringify(placedOrder),
    'reading order preserved (page, then col, then y)');
 

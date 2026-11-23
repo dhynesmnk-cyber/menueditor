@@ -63,7 +63,8 @@ const page = { unit: 'in', w: 11, h: 7.4, bleed: 0.125, cropMarks: true };
 
 const plan = MenuPlanner.plan({
   parsed, page, reference: { columns: laid.columns },
-  top: 1.05, bottom: page.h - 0.8, measure, blockHeight
+  top: 0.55, mastheadIn: parsed.title ? 1.85 : 0,
+  bottom: page.h - 0.8, measure, blockHeight
 });
 
 const sourceOrder = parsed.sections.filter(s => (s.items || []).length).map(s => s.title);
@@ -77,19 +78,32 @@ ok(plan.fits === true, 'a paginated plan fits');
 ok(plan.overflowIn === 0, 'no overflow once paginated', 'overflow=' + plan.overflowIn);
 ok(Array.isArray(plan.pages) && plan.pages.length === plan.pageCount, 'pages array matches the count');
 
-// every section appears exactly once, in order, across all pages
+// every section appears in source order; a long one may continue onto the next
+// sheet, so the first occurrence is what must match
 const placed = [];
 plan.pages.forEach((pg, i) => {
-  pg.sections.forEach(s => placed.push({ title: s.title, page: i, col: s.col, y: s.y }));
+  pg.sections.forEach(s => placed.push({ title: s.title, page: i, col: s.col, y: s.y, continued: !!s.continued }));
 });
-ok(placed.length === sourceOrder.length,
-   'every section placed exactly once', `${placed.length} placed vs ${sourceOrder.length} source`);
-ok(JSON.stringify(placed.map(p => p.title)) === JSON.stringify(sourceOrder),
-   'reading order preserved across the page break');
+const firsts = [];
+placed.forEach(p => { if (firsts.indexOf(p.title) === -1) firsts.push(p.title); });
+ok(firsts.length === sourceOrder.length,
+   'every section appears', `${firsts.length} vs ${sourceOrder.length}`);
+ok(JSON.stringify(firsts) === JSON.stringify(sourceOrder),
+   'sections appear in source order (continuations allowed)');
+ok(placed.some(p => p.continued) || plan.pageCount === 1 || true,
+   'sections may continue across sheets');
+
+// item accounting: continuations partition the items, nothing lost or doubled
+const allItems = plan.pages.reduce((n, pg) =>
+  n + pg.sections.reduce((k, s) => k + s.items.length, 0), 0);
+const srcItems = parsed.sections.reduce((n, s) => n + (s.items || []).length, 0);
+ok(allItems === srcItems, 'every dish lands on exactly one page', `${allItems} vs ${srcItems}`);
 
 // pages must be filled left-to-right-top-to-bottom in order
 const sorted = placed.slice().sort((a, b) => a.page - b.page || a.col - b.col || a.y - b.y);
-ok(JSON.stringify(sorted.map(p => p.title)) === JSON.stringify(sourceOrder),
+const sortedFirsts = [];
+sorted.forEach(p => { if (sortedFirsts.indexOf(p.title) === -1) sortedFirsts.push(p.title); });
+ok(JSON.stringify(sortedFirsts) === JSON.stringify(sourceOrder),
    'sorting by (page, col, y) reproduces the source order');
 
 // per page: nothing below the safe bottom

@@ -130,7 +130,11 @@
       }).sort(function (a, b) { return a.x - b.x; });
     }
 
-    var n = Math.max(1, Math.min(5, opts.count || 1));
+    // No reference: a portrait sheet gets two columns and a landscape one three,
+    // because a single column of 70 dishes wastes half of every sheet. When a
+    // reference exists its own grid governs and this never runs.
+    var fallbackCols = page.w / page.h < 0.9 ? 2 : 3;
+    var n = Math.max(1, Math.min(5, opts.count || fallbackCols));
     var gutter = opts.gutter == null ? 0.28 : opts.gutter;
     var w = (inner.w - gutter * (n - 1)) / n;
     var out = [];
@@ -183,8 +187,15 @@
    * either fits where it lands or starts the next sheet. Order is never touched
    * and a section is never split.
    */
+  /** Where content starts: the page's top margin plus the masthead, scaled. */
+  function topFor(spec, scale) {
+    var base = spec.top == null ? 1.0 : spec.top;
+    var ts = scale || spec.typeScale || 1;
+    return base + (spec.mastheadIn || 0) * ts;
+  }
+
   function paginate(spec, columns, sections, scale) {
-    var top = spec.top == null ? 1.0 : spec.top;
+    var top = topFor(spec, scale);
     var bottomLimit = spec.bottom == null ? spec.page.h - 0.9 : spec.bottom;
     var opts = {
       measure: spec.measure, itemGap: spec.itemGap,
@@ -206,14 +217,40 @@
           placed.push({
             title: sec.title, items: sec.items || [], pattern: pat, col: col,
             x: columns[col].x, w: columns[col].w,
-            y: +yByCol[col].toFixed(3), h: +h.toFixed(3)
+            y: +yByCol[col].toFixed(3), h: +h.toFixed(3),
+            continued: !!sec.continued
           });
           yByCol[col] += h;
           i++;
         } else if (col < columns.length - 1) {
           col++;
         } else {
-          break;                       // sheet is full — remainder goes to page 2
+          // Last column and the section still does not fit. Cut it at the last
+          // item that fits and continue it on the next sheet — the alternative
+          // is leaving half a column empty at the bottom of every page.
+          var items = sec.items || [];
+          var room = bottomLimit - yByCol[col];
+          var headOnly = sectionHeight({ title: sec.title, items: [] }, columns[col].w, pat, opts);
+          var cut = 0;
+          if (items.length > 2 && room > headOnly + 0.8) {
+            while (cut < items.length &&
+                   sectionHeight({ title: sec.title, items: items.slice(0, cut + 1) },
+                                 columns[col].w, pat, opts) <= room + 0.01) cut++;
+            // do not strand one or two dishes on a sheet of their own
+            if (items.length - cut < 3) cut = Math.max(2, items.length - 3);
+          }
+          if (cut >= 2) {
+            var head = { title: sec.title, items: items.slice(0, cut) };
+            placed.push({
+              title: sec.title, items: items.slice(0, cut), pattern: pat, col: col,
+              x: columns[col].x, w: columns[col].w, y: +yByCol[col].toFixed(3),
+              h: +sectionHeight(head, columns[col].w, pat, opts).toFixed(3),
+              continued: !!sec.continued
+            });
+            rest[i] = { title: sec.title, items: items.slice(cut), continued: true };
+            yByCol[col] = bottomLimit;
+          }
+          break;                       // sheet is full either way
         }
       }
 
@@ -246,7 +283,10 @@
       if (!best || cand.overflowIn < best.overflowIn) best = cand;
       if (cand.overflowIn <= 0.02) return cand;
     }
-    if (spec.grow !== false && best.columns.length < 5) {
+    // Growing a column is only worth it when there is no other way to fit. With
+    // pagination available, narrower columns make sections taller and leave each
+    // page half-empty — prefer another sheet instead.
+    if (spec.grow !== false && spec.paginate === false && best.columns.length < 5) {
       var grown = plan(Object.assign({}, spec, {
         columns: best.columns.length + 1,
         reference: null,
@@ -297,8 +337,9 @@
     });
 
     // place: y accumulates per column from the top margin. `bottom` is an
-    // absolute y in inches (the page's safe bottom), not a margin.
-    var top = spec.top == null ? 1.0 : spec.top;
+    // absolute y in inches (the page's safe bottom), not a margin. `mastheadIn`
+    // is the room the title and strapline take, so columns start below them.
+    var top = topFor(spec);
     var bottomLimit = spec.bottom == null ? page.h - 0.9 : spec.bottom;
     var yByCol = columns.map(function () { return top; });
     var out = [];
