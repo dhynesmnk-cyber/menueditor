@@ -100,13 +100,46 @@ def _open_font(path):
         return None
 
 
-def build(doc_bytes, edits=None, images=None, adds=None, deletes=None, font_paths=None):
+def _strip_text(page):
+    """Take the words off a copied sheet, leave its art (rules, frames, images)."""
+    page.add_redact_annot(page.rect, fill=None, cross_out=False)
+    try:
+        page.apply_redactions(images=pymupdf.PDF_REDACT_IMAGE_NONE,
+                              graphics=pymupdf.PDF_REDACT_LINE_ART_NONE,
+                              text=pymupdf.PDF_REDACT_TEXT_REMOVE)
+    except Exception:                                              # noqa: BLE001
+        pass
+
+
+def _page_map(original_count, page_ops):
+    """Client page index -> sheet index in the working document.
+
+    The client numbers pages after the operations it has already made, while the
+    working PDF still holds every original sheet until the deletions at the end. Both
+    lists are in page_ops, so the mapping is exact rather than assumed.
+    """
+    gone = set(int(p) for p in (page_ops.get("delete") or []))
+    m, k = {}, 0
+    for i in range(original_count):
+        if i in gone:
+            continue
+        m[k] = i
+        k += 1
+    for j in range(len(page_ops.get("new") or [])):
+        m[k] = original_count + j
+        k += 1
+    return m
+
+
+def build(doc_bytes, edits=None, images=None, adds=None, deletes=None, font_paths=None,
+          page_ops=None):
     """Apply text edits, deletions, added boxes and image swaps; returns (pdf, info)."""
     edits = edits or []
     images = images or []
     adds = adds or []
     deletes = deletes or []
     font_paths = font_paths or {}
+    page_ops = page_ops or {}
 
     data = extract(doc_bytes)
     by_gi = {}
@@ -117,6 +150,27 @@ def build(doc_bytes, edits=None, images=None, adds=None, deletes=None, font_path
     doc = pymupdf.open(stream=doc_bytes, filetype="pdf")
     applied, refused, removed = [], [], []
     cuts = []                                    # (page, rect) to redact
+    original_count = doc.page_count
+
+    # ---- new sheets first, so the pages the payload addresses all exist -----
+    # A copy keeps the art and loses the words: the lines of a duplicated sheet are
+    # sent as added boxes, which is what makes the copy editable rather than a picture.
+    added_pages = 0
+    copy_src = None
+    for spec in (page_ops.get("new") or []):
+        src = spec.get("from")
+        if src is not None and 0 <= int(src) < original_count:
+            if copy_src is None:      # pymupdf refuses to copy a document into itself
+                copy_src = pymupdf.open(stream=doc_bytes, filetype="pdf")
+            at = doc.page_count
+            doc.insert_pdf(copy_src, from_page=int(src), to_page=int(src), start_at=at)
+            _strip_text(doc[at])
+        else:
+            base = doc[0].rect if doc.page_count else pymupdf.Rect(0, 0, 595, 842)
+            w = float(spec.get("width") or base.width)
+            h = float(spec.get("height") or base.height)
+            doc.new_page(doc.page_count, width=w, height=h)
+        added_pages += 1
 
     # ---- existing lines -----------------------------------------------------
     for e in edits:
@@ -176,10 +230,11 @@ def build(doc_bytes, edits=None, images=None, adds=None, deletes=None, font_path
         removed.append(o)
 
     # ---- image swaps: the old pixels in the rect, not the line art ----------
+    pmap = _page_map(original_count, page_ops)
     placed = []
     for im in images:
         try:
-            pno = int(im.get("page", 0))
+            pno = pmap.get(int(im.get("page", 0)), int(im.get("page", 0)))
             if pno < 0 or pno >= doc.page_count:
                 continue
             rect = pymupdf.Rect(float(im["x0"]), float(im["y0"]),
@@ -248,7 +303,7 @@ def build(doc_bytes, edits=None, images=None, adds=None, deletes=None, font_path
     added = 0
     for a in adds:
         try:
-            pno = int(a.get("page", 0))
+            pno = pmap.get(int(a.get("page", 0)), int(a.get("page", 0)))
             if pno < 0 or pno >= doc.page_count:
                 continue
             text = str(a.get("text") or "")
@@ -264,6 +319,17 @@ def build(doc_bytes, edits=None, images=None, adds=None, deletes=None, font_path
         except Exception as exc:                                   # noqa: BLE001
             refused.append({"add": a.get("id"), "reason": str(exc)})
 
+    # ---- deleted sheets last, so every id above still meant what it said ----
+    gone = []
+    for p in (page_ops.get("delete") or []):
+        try:
+            gone.append(int(p))
+        except (TypeError, ValueError):
+            continue
+    gone = [p for p in gone if 0 <= p < original_count]
+    for pno in sorted(set(gone), reverse=True):
+        doc.delete_page(pno)
+
     doc.subset_fonts()
     out = doc.tobytes(garbage=4, deflate=True)
     return out, {
@@ -272,4 +338,6 @@ def build(doc_bytes, edits=None, images=None, adds=None, deletes=None, font_path
         "deleted": len(removed),
         "refused": refused,
         "images": len(placed),
+        "pages_added": added_pages,
+        "pages_deleted": len(set(gone)),
     }

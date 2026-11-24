@@ -12,6 +12,7 @@
     "test:workspace": ".lines/bin/python test/workspace.py",
     "test:project": ".lines/bin/python test/project-export.py",
     "test:shapes": ".lines/bin/python test/export-shapes.py",
+    "test:pages": ".lines/bin/python test/page-ops.py",
     "test:canvas": ".lines/bin/python test/canvas-lines.py out/canvas-shot.png",
     "test:parse": "node test/parse.js",
     "test:inline": "node test/parse-inline.js",

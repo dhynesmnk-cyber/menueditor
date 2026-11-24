@@ -198,12 +198,15 @@ class Handler(BaseHTTPRequestHandler):
             adds=payload.get("adds") or [],
             deletes=payload.get("deletes") or [],
             font_paths=font_paths,
+            page_ops=payload.get("page_ops") or {},
         )
         extra = {
             "X-Edits-Applied": str(info["applied"]),
             "X-Edits-Refused": str(len(info["refused"])),
             "X-Images-Placed": str(info.get("images", 0)),
             "X-Adds-Applied": str(info.get("added", 0)),
+            "X-Pages-Added": str(info.get("pages_added", 0)),
+            "X-Pages-Deleted": str(info.get("pages_deleted", 0)),
             "X-Deletes-Applied": str(info.get("deleted", 0)),
         }
         if save_as:

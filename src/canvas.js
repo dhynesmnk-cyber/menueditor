@@ -57,6 +57,8 @@
       '  padding:14px 18px 34px;min-width:max-content}',
       '.cv-zoom{display:flex;gap:4px;align-items:center}',
       '.cv-zoom .cv-btn{padding:4px 8px;min-width:30px}',
+      '.cv-pgctl{display:flex;gap:4px;align-items:center;padding-left:6px;border-left:1px solid rgba(255,255,255,.16)}',
+      '.cv-pgctl .cv-btn{padding:4px 8px}',
       '.cv-pnum{position:absolute;left:0;top:-16px;font:11px/1 ui-monospace,monospace;color:#667485}',
       '.cv-line rect.hit{fill:transparent;cursor:move}',
       '.cv-line.sel rect.hit{stroke:#2f6fed;stroke-width:.6;fill:rgba(47,111,237,.06)}',
@@ -135,6 +137,14 @@
       '  <button class="cv-btn" data-role="addtext" title="add a text box (T)">＋ Text</button>' +
       '  <button class="cv-btn" data-role="delete" title="delete the selected line (Del)">Delete</button>' +
       '  <button class="cv-btn" data-role="fonts" title="load a font file into this project">Fonts</button>' +
+      '  <span class="cv-pgctl">' +
+      '    <button class="cv-btn" data-role="pgprev" title="show the previous page">‹</button>' +
+      '    <button class="cv-btn" data-role="pglabel" title="the page these buttons act on">1 / 1</button>' +
+      '    <button class="cv-btn" data-role="pgnext" title="show the next page">›</button>' +
+      '    <button class="cv-btn" data-role="pgdup" title="copy this sheet: its art stays, its lines become editable">Duplicate</button>' +
+      '    <button class="cv-btn" data-role="pgadd" title="add a blank page">+ Page</button>' +
+      '    <button class="cv-btn" data-role="pgdel" title="delete this page">Delete page</button>' +
+      '  </span>' +
       '  <span class="cv-zoom">' +
       '    <button class="cv-btn" data-role="zout" title="zoom out">−</button>' +
       '    <button class="cv-btn" data-role="zlabel" title="fit width → fit page → 100%">100%</button>' +
@@ -219,7 +229,8 @@
     var lines = new Map();          // gi -> <g>
     var imageSlots = new Map();     // "page:k" -> <g>
 
-    data.pages.forEach(function (p, pno) {
+    function buildStages() {
+      data.pages.forEach(function (p, pno) {
       var W = p.width, H = p.height;
       var stage = document.createElement('div');
       stage.className = 'cv-stage';
@@ -292,7 +303,118 @@
         guideY: svgEl.querySelector('[data-role=gy]'),
         guides: root.MenuLines.guides(p.objects)
       });
+      });
+    }
+    buildStages();
+
+    // ---- pages ---------------------------------------------------------------
+    // A page op is a document-level operation, and the exporter applies it to the PDF:
+    // drop a sheet, copy one, or append a blank one. The canvas shows the same model, so
+    // a duplicate is a sheet whose lines are *added boxes* — the sidecar copies the art
+    // and takes the words off it, and these boxes put them back, editable.
+    var pageOps = { delete: [], new: [] };
+    var curPage = 0;
+
+    data.pages.forEach(function (p) {
+      p.src = p.index !== undefined ? p.index : p.src;   // which sheet of the source PDF
+      p.art = p.src;                                     // which sheet's art a copy takes
     });
+
+    function rebuildStages() {
+      views.length = 0;
+      lines.clear();
+      imageSlots.clear();
+      pagesEl.innerHTML = '';
+      buildStages();
+      views.forEach(bindView);
+      attachMeasurer();
+      renderAdds();
+      applyScale();
+      updatePageBar();
+    }
+
+    function updatePageBar() {
+      var lab = overlay.querySelector('[data-role=pglabel]');
+      if (lab) lab.textContent = (curPage + 1) + ' / ' + data.pages.length;
+      var del = overlay.querySelector('[data-role=pgdel]');
+      if (del) del.disabled = data.pages.length <= 1;
+    }
+
+    function goPage(k) {
+      curPage = Math.max(0, Math.min(k, data.pages.length - 1));
+      updatePageBar();
+      var v = views[curPage];
+      if (v) v.stage.scrollIntoView({ block: 'start', behavior: 'smooth' });
+    }
+
+    function pageSize() {
+      var ref = data.pages[curPage] || data.pages[0];
+      return { width: ref ? ref.width : 595, height: ref ? ref.height : 842 };
+    }
+
+    function addBlankPage() {
+      var sz = pageSize();
+      data.pages.push({ index: data.pages.length, width: sz.width, height: sz.height,
+                        objects: [], vectors: [], images: [], plate: null,
+                        src: null, art: null, newIdx: pageOps.new.length });
+      pageOps.new.push({ from: null, width: sz.width, height: sz.height });
+      curPage = data.pages.length - 1;
+      rebuildStages();
+      goPage(curPage);
+      status('blank page ' + data.pages.length + ' added');
+      persist();
+    }
+
+    function duplicatePage() {
+      var pno = curPage, src = data.pages[pno];
+      if (!src) return;
+      var idx = data.pages.length;
+      data.pages.push({ index: idx, width: src.width, height: src.height,
+                        objects: [], vectors: src.vectors, images: [], plate: src.plate,
+                        src: null, art: src.art, newIdx: pageOps.new.length });
+      pageOps.new.push({ from: src.art === undefined ? null : src.art,
+                         width: src.width, height: src.height });
+      // every line of the copy is new ink, so it travels as a box; the source's own
+      // saved boxes come along too, which is what makes a copy of a copy work
+      var carry = src.objects.slice();
+      adds.filter(function (a) { return a.page === pno; }).forEach(function (a) { carry.push(a); });
+      carry.forEach(function (o) {
+        var v = o.gi !== undefined ? root.MenuLines.effective(objects, edits, o.gi) : o;
+        adds.push({ id: 'd' + (addSeq++), page: idx, text: v.text, x: v.x, y: v.y,
+                    size: v.size, track: v.track, font: v.font, color: v.color });
+      });
+      curPage = idx;
+      rebuildStages();
+      goPage(curPage);
+      status('page ' + (pno + 1) + ' duplicated · ' + carry.length + ' lines carried over');
+      persist();
+    }
+
+    function deletePage() {
+      if (data.pages.length <= 1) {
+        status('a document needs at least one page');
+        return;
+      }
+      var pno = curPage, pg = data.pages[pno];
+      pg.objects.forEach(function (o) { edits.delete(o.gi); deletes.delete(o.gi); });
+      adds = adds.filter(function (a) { return a.page !== pno; });
+      adds.forEach(function (a) { if (a.page > pno) a.page -= 1; });
+      if (pg.newIdx !== undefined && pg.newIdx !== null) {
+        // a sheet this session created: drop its request instead of deleting a source page
+        pageOps.new.splice(pg.newIdx, 1);
+        data.pages.forEach(function (p) {
+          if (p.newIdx !== undefined && p.newIdx !== null && p.newIdx > pg.newIdx) p.newIdx -= 1;
+        });
+      } else if (pg.art !== null && pg.art !== undefined) {
+        pageOps.delete.push(pg.art);
+      }
+      data.pages.splice(pno, 1);
+      curPage = Math.min(pno, data.pages.length - 1);
+      rebuildStages();
+      goPage(curPage);
+      status('page ' + (pno + 1) + ' deleted');
+      persist();
+    }
 
     // ---- fit to the window, with zoom ----
     // The page renders at Z CSS px per point; the stage is then sized by `scale`, and the
@@ -352,11 +474,35 @@
       setZoom(zoomMode === 'fitw' ? 'fitp' : (zoomMode === 'fitp' ? '1' : 'fitw'));
     });
 
+    // ---- page controls ------------------------------------------------------
+    overlay.querySelector('[data-role=pgprev]').addEventListener('click', function () {
+      goPage(curPage - 1);
+    });
+    overlay.querySelector('[data-role=pgnext]').addEventListener('click', function () {
+      goPage(curPage + 1);
+    });
+    overlay.querySelector('[data-role=pgdup]').addEventListener('click', duplicatePage);
+    overlay.querySelector('[data-role=pgadd]').addEventListener('click', addBlankPage);
+    overlay.querySelector('[data-role=pgdel]').addEventListener('click', deletePage);
+    overlay.querySelector('[data-role=pages]').addEventListener('click', function (ev) {
+      // clicking a sheet on the stage makes it the page the controls act on
+      var st = ev.target.closest('.cv-stage');
+      if (st) {
+        var k = views.findIndex(function (v) { return v.stage === st; });
+        if (k >= 0 && k !== curPage) { curPage = k; updatePageBar(); }
+      }
+    }, true);
+    updatePageBar();
+
     // ---- measuring with the real fonts ----
     var measurer = document.createElementNS('http://www.w3.org/2000/svg', 'text');
     measurer.setAttribute('xml:space', 'preserve');
     measurer.setAttribute('visibility', 'hidden');
-    views[0].svg.appendChild(measurer);
+    function attachMeasurer() {
+      var host = views[0];
+      if (host && measurer.parentNode !== host.svg) host.svg.appendChild(measurer);
+    }
+    attachMeasurer();
     function measure(text, size, track, font) {
       measurer.setAttribute('font-family', font || 'serif');
       measurer.setAttribute('font-size', size);
@@ -406,7 +552,8 @@
                    size: a.size, track: a.track, font: a.font, color: a.color };
         }),
         // only real glyph ids: a stale payload must not smuggle an object in here
-        deletes: Array.from(deletes).filter(function (d) { return typeof d === 'number'; })
+        deletes: Array.from(deletes).filter(function (d) { return typeof d === 'number'; }),
+        page_ops: pageOps
       };
     }
     function loadWork(w) {
@@ -424,7 +571,44 @@
         var gi = (d && typeof d === 'object') ? d.gi : d;
         if (gi !== undefined && gi !== null) deletes.add(gi);
       });
+      applySavedPageOps(w.page_ops);
       return edits.size + imageEdits.size + adds.length + deletes.size;
+    }
+
+    // Replay the sheet operations a saved project carries, so a reload opens the same
+    // document the client was working on rather than the original PDF.
+    function applySavedPageOps(ops) {
+      if (!ops || (!(ops.new || []).length && !(ops.delete || []).length)) return;
+      (ops.delete || []).forEach(function (orig) {
+        var k = -1;
+        data.pages.forEach(function (p, i) {
+          if (k < 0 && p.src !== null && p.src !== undefined && p.src === orig) k = i;
+        });
+        if (k >= 0) {
+          data.pages[k].objects.forEach(function (o) { /* its lines are simply gone */ });
+          data.pages.splice(k, 1);
+        }
+      });
+      (ops.new || []).forEach(function (spec, k) {
+        var ref = null;
+        if (spec.from !== null && spec.from !== undefined) {
+          data.pages.forEach(function (p) {
+            if (!ref && p.src !== null && p.src !== undefined && p.src === spec.from) ref = p;
+          });
+        }
+        data.pages.push({
+          index: data.pages.length,
+          width: spec.width || (ref ? ref.width : 595),
+          height: spec.height || (ref ? ref.height : 842),
+          objects: [], vectors: ref ? ref.vectors : [], images: [],
+          plate: ref ? ref.plate : null, src: null,
+          art: spec.from === undefined ? null : spec.from, newIdx: k
+        });
+      });
+      pageOps = { delete: (ops.delete || []).slice(), new: (ops.new || []).slice() };
+      rebuildStages();
+      curPage = Math.max(0, Math.min(curPage, data.pages.length - 1));
+      goPage(curPage);
     }
 
     function snapshot() {
@@ -957,7 +1141,7 @@
     }
 
     // ---- drag, per page ----  (lines and added boxes share one gesture path)
-    views.forEach(function (view) {
+    function bindView(view) {
       var svgEl = view.svg;
 
       function clearSel() {
@@ -1079,7 +1263,8 @@
         ev.preventDefault();
         setTimeout(function () { startEdit(g); }, 0);
       });
-    });
+    }
+    views.forEach(bindView);
 
     // ---- image replacement ----
     var filePicker = null;
@@ -1244,7 +1429,8 @@
     document.addEventListener('keydown', api._keyHandler);
 
     async function exportPdf() {
-      if (!edits.size && !imageEdits.size && !adds.length && !deletes.size) {
+      if (!edits.size && !imageEdits.size && !adds.length && !deletes.size &&
+          !pageOps.new.length && !pageOps.delete.length) {
         status('no changes to export'); return;
       }
       status('exporting…');
@@ -1263,7 +1449,8 @@
                    size: a.size, track: a.track, font: a.font, color: a.color };
         }),
         deletes: Array.from(deletes).filter(function (d) { return typeof d === 'number'; })
-          .map(function (gi) { return { gi: gi }; })
+          .map(function (gi) { return { gi: gi }; }),
+        page_ops: pageOps
       };
       var url = SERVICE + '/splice';
       if (project) url = SERVICE + '/projects/' + encodeURIComponent(project.slug) + '/export';
@@ -1290,6 +1477,9 @@
       if (adds.length) bits.push((addedN === null ? adds.length : addedN) + ' added');
       if (deletes.size) bits.push((deletedN === null ? deletes.size : deletedN) + ' deleted');
       if (imageEdits.size) bits.push((placed === null ? imageEdits.size : placed) + ' image(s)');
+      var pa = res.headers.get('X-Pages-Added'), pd = res.headers.get('X-Pages-Deleted');
+      if (pageOps.new.length) bits.push((pa === null ? pageOps.new.length : pa) + ' page(s) added');
+      if (pageOps.delete.length) bits.push((pd === null ? pageOps.delete.length : pd) + ' page(s) deleted');
       status('exported ' + bits.join(' · ') + ' · ' + Math.round(blob.size / 1024) + 'K' +
              (savedName ? ' · saved in project' : '') +
              (refused && refused !== '0' ? ' · ' + refused + ' refused' : ''));
