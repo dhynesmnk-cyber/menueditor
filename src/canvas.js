@@ -140,6 +140,7 @@
       '  <button class="cv-btn" data-role="addtext" title="add a text box (T)">＋ Text</button>' +
       '  <button class="cv-btn" data-role="delete" title="delete the selected line (Del)">Delete</button>' +
       '  <button class="cv-btn" data-role="fonts" title="load a font file into this project">Fonts</button>' +
+      '  <button class="cv-btn" data-role="reimport" title="replace the source PDF with a revised one; your changes are carried over">↻ New PDF</button>' +
       '  <span class="cv-pgctl">' +
       '    <button class="cv-btn" data-role="pgprev" title="show the previous page">‹</button>' +
       '    <button class="cv-btn" data-role="pglabel" title="the page these buttons act on">1 / 1</button>' +
@@ -364,6 +365,9 @@
       var hide = [];
       if (allow.pageOps === false) hide.push('pgprev', 'pgnext', 'pgdup', 'pgadd', 'pgdel');
       if (allow.addText === false) hide.push('addtext');
+      // a picture has no source PDF to revise, and a menu that was never saved as a
+      // project has nothing to re-import into
+      if (!project || (data.pages[0] && data.pages[0].kind === 'raster')) hide.push('reimport');
       hide.forEach(function (role) {
         var b = overlay.querySelector('[data-role=' + role + ']');
         if (b) b.style.display = 'none';
@@ -1492,6 +1496,50 @@
       fontPicker.click();
     });
 
+    // ---- a revised PDF from the designer ------------------------------------
+    // The client's work is re-keyed onto the new file by the sidecar, then the canvas
+    // reopens on it. Nothing is thrown away silently: the summary counts what was kept,
+    // what could not be matched, and what was already gone.
+    var pdfPicker = document.createElement('input');
+    var reimportMsg = '';
+    pdfPicker.type = 'file';
+    pdfPicker.accept = 'application/pdf';
+    pdfPicker.style.display = 'none';
+    document.body.appendChild(pdfPicker);
+    overlay.querySelector('[data-role=reimport]').addEventListener('click', function () {
+      if (!project) { status('save this as a project first'); return; }
+      pdfPicker.value = '';
+      pdfPicker.onchange = function () {
+        var f = pdfPicker.files && pdfPicker.files[0];
+        if (!f) return;
+        status('reading ' + f.name + '…');
+        f.arrayBuffer().then(function (buf) {
+          return fetch(SERVICE + '/projects/' + encodeURIComponent(project.slug) + '/reimport', {
+            method: 'POST', headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ pdf: toB64(buf) })
+          });
+        }).then(function (r) {
+          return r.json().then(function (j) {
+            if (!r.ok) throw new Error(j.error || ('re-import failed: ' + r.status));
+            var rep = j.report || {};
+            reimportMsg = 'revised PDF: ' + (j.summary || 'nothing to carry');
+            if ((rep.orphaned || []).length) {
+              reimportMsg += ' — not matched: ' + rep.orphaned.slice(0, 3)
+                .map(function (o) { return '“' + o.text + '”'; }).join(', ') +
+                (rep.orphaned.length > 3 ? ' and ' + (rep.orphaned.length - 3) + ' more' : '');
+            }
+            status(reimportMsg);
+            return fetch(SERVICE + '/projects/' + encodeURIComponent(project.slug));
+          }).then(function (r2) { return r2.json(); }).then(function (j2) {
+            open({ data: j2.lines,
+                   project: { slug: j2.meta.slug, name: j2.meta.name, fonts: j2.fonts || [] },
+                   work: j2.work, manifest: j2.manifest, onClose: opts.onClose, note: reimportMsg });
+          });
+        }).catch(function (e) { status(e.message); });
+      };
+      pdfPicker.click();
+    });
+
     // ---- project switcher ---------------------------------------------------
     overlay.querySelector('[data-role=projects]').addEventListener('click', function () {
       openWorkspace({ onClose: opts.onClose });
@@ -1582,7 +1630,8 @@
 
     var restored = restore();
     countStatus();
-    if (restored) status(restored + (restored === 1 ? ' edit' : ' edits') + ' restored');
+    if (opts.note) status(opts.note);
+    else if (restored) status(restored + (restored === 1 ? ' edit' : ' edits') + ' restored');
     api.current = { edits: edits, imageEdits: imageEdits, objects: objects, views: views,
                     renderLine: renderLine, renderImage: renderImage, setEdit: setEdit,
                     undo: undo, measure: measure, fam: fam, docKey: docKey, status: status,

@@ -154,6 +154,14 @@ class Handler(BaseHTTPRequestHandler):
                     self._json(200, workspace.add_font(slug, payload.get("name") or "",
                                                        _b64(payload.get("data"))))
                     return
+                if len(parts) == 3 and parts[2] == "reimport":
+                    payload = self._payload()
+                    pdf = _b64(payload.get("pdf"))
+                    if not pdf.startswith(b"%PDF"):
+                        self._json(400, {"error": "missing pdf"})
+                        return
+                    self._json(200, workspace.reimport_pdf(slug, pdf))
+                    return
                 if len(parts) == 3 and parts[2] == "manifest":
                     self._json(200, workspace.write_manifest(slug, self._payload()))
                     return

@@ -252,6 +252,38 @@ def open_project(slug):
     }
 
 
+def reimport_pdf(slug, pdf_bytes):
+    """Swap the source PDF for a revised one, carrying the client's work across.
+
+    The old import and the new one are matched line by line (see sidecar/reimport.py), the
+    work is re-keyed onto the new ids, and only then is anything overwritten — a failure here
+    leaves the project as it was.
+    """
+    import grouping
+    import reimport as reim
+
+    d = _dir(slug)
+    meta = _read_json(os.path.join(d, "meta.json"))
+    if meta.get("kind") == "image":
+        raise ValueError("this project is a picture, not a PDF — there is nothing to re-import")
+    old = _read_json(os.path.join(d, "objects.json"), {"pages": []})
+    work = _read_json(os.path.join(d, "edits.json"), _empty_work())
+
+    fresh = grouping.extract(pdf_bytes)
+    if not (fresh.get("pages") or []):
+        raise ValueError("the new PDF has no pages")
+    new_work, report = reim.remap(old, fresh, work)
+
+    with open(os.path.join(d, "original.pdf"), "wb") as fh:
+        fh.write(pdf_bytes)
+    _write_json(os.path.join(d, "objects.json"), fresh)
+    _write_json(os.path.join(d, "edits.json"), new_work)
+    meta.update({"pages": len(fresh["pages"]), "updated": _now(),
+                 "size": len(pdf_bytes), "source": "original.pdf"})
+    _write_json(os.path.join(d, "meta.json"), meta)
+    return {"report": report, "summary": reim.summary(report), "work": new_work, "meta": meta}
+
+
 def original(slug):
     """The document the export splices: the PDF itself, or a one-page PDF made from the
     picture a raster project was created from (same page box every time, so repeat exports
