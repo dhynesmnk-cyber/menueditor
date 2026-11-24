@@ -3,3 +3,12 @@ out/
 .ocr/
 *.log
 .DS_Store
+
+# edited menus live here: client PDFs, fonts and exports are private
+projects/
+/ela-test.pdf
+
+# python sidecar environments and caches
+.lines/
+__pycache__/
+*.pyc

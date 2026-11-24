@@ -180,12 +180,21 @@
       var pw = price ? wOf(price, priceSt) : 0;
       var baseline = y + ascPx(nameSt);
 
-      els.push(textEl(b.name || '', x, baseline, nameSt, b.color || th.ink));
+      // A dish name that does not fit its column must wrap, not run through the
+      // next column's price. The price keeps its own reservation on line one and
+      // the leader dots only appear when the name is a single line — dots under a
+      // wrapped name read as a rule.
+      var nameRoom = price ? Math.max(w * 0.35, w - pw - 12) : w;
+      var nameLines = wrap(b.name || '', nameSt, nameRoom);
+      var nameLh = nameSt.size * (b.nameLeading || 1.16);
+      for (var nl = 0; nl < nameLines.length; nl++) {
+        els.push(textEl(nameLines[nl], x, baseline + nl * nameLh, nameSt, b.color || th.ink));
+      }
       if (price) {
         els.push(textEl(price, x + w - pw, baseline, priceSt, b.priceColor || th.ink));
       }
-      if (b.leader !== false && price) {
-        var d1 = x + wOf(b.name || '', nameSt) + 4.5;
+      if (b.leader !== false && price && nameLines.length === 1) {
+        var d1 = x + wOf(nameLines[0], nameSt) + 4.5;
         var d2 = x + w - pw - 4.5;
         if (d2 - d1 > 8) {
           els.push({
@@ -196,7 +205,7 @@
         }
       }
 
-      var h = nameSt.size * 1.16;
+      var h = nameLines.length * nameLh;
 
       if (b.desc) {
         var dlines = wrap(b.desc, descSt, w);

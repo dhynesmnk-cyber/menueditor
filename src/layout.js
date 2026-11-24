@@ -91,7 +91,14 @@
         var medGap = median(gaps);
         var text = run[0].text.trim();
         for (var g = 0; g < gaps.length; g++) {
-          text += (gaps[g] > medGap * 1.7 ? ' ' : '') + run[g + 1].text.trim();
+          var nxt = run[g + 1].text.trim();
+          // A word break in tracked type is a gap only fractionally wider than
+          // the tracking (measured 1.45-1.7x on a real A4 menu), so the old 2.2x
+          // rule left "CHAAT/STREETSNACKS" as one word. Punctuation that cannot
+          // sit inside a word always takes spaces.
+          var wide = gaps[g] > medGap * 1.55 ||
+                     /^[\/·—–&]$/.test(nxt) || /[\/·—–&]$/.test(run[g].text.trim());
+          text += (wide ? ' ' : '') + nxt;
         }
         out.push({
           text: text,
@@ -185,7 +192,7 @@
         var out = parts[0];
         for (var j = 1; j < ws.length; j++) {
           var tok = parts[j];
-          var wide = gaps[j - 1] > medGap * 1.9 || /^[\/·—–]$/.test(tok) || /[\/·—–]$/.test(parts[j - 1]);
+          var wide = gaps[j - 1] > medGap * 1.55 || /^[\/·—–&]$/.test(tok) || /[\/·—–&]$/.test(parts[j - 1]);
           out += wide ? ' ' + tok : tok;
         }
         return out.replace(/\s{2,}/g, ' ').trim();
@@ -281,25 +288,101 @@
       }
     });
 
-    // ---- 4. read out: column by column, top to bottom, blank line at big breaks
+    // ---- 4. read out in BANDS.
+    // A menu is not read one column at a time; it is read across. A heading is
+    // followed by its items in two or three sub-columns, and the sub-column count
+    // can change band by band (a two-column body with a three-column bar in the
+    // middle). A single global column list cannot describe that, and reading it
+    // column-major detaches every heading from the items beside it. So the page is
+    // cut into horizontal bands at the full-width gutters between sections, and
+    // each band is read left to right, top to bottom.
     var lineStep = median(lines.map(function (l, i) {
       return i ? l.cy - lines[i - 1].cy : 0;
     }).filter(function (v) { return v > 0; })) || medH * 1.6;
     var bigBreak = lineStep * 1.75;
+    var bandGap = Math.max(medH * 1.9, lineStep * 1.8);
+
+    var bands = [];
+    segments.slice().sort(function (a, b) {
+      return (a.cy - b.cy) || (a.left - b.left);
+    }).forEach(function (seg) {
+      var b = bands[bands.length - 1];
+      if (!b || seg.top > b.bottom + bandGap) {
+        b = { top: seg.top, bottom: seg.bottom, segs: [], left: seg.left, right: seg.right };
+        bands.push(b);
+      }
+      b.segs.push(seg);
+      b.bottom = Math.max(b.bottom, seg.bottom);
+      b.left = Math.min(b.left, seg.left);
+      b.right = Math.max(b.right, seg.right);
+    });
+
+    function zoneOf(seg) {
+      var best = 0;
+      for (var i = 0; i < columns.length; i++) {
+        if (columns[i].left <= seg.left + minSep * 0.5) best = i;
+      }
+      return best;
+    }
+
+    function isHeadingRow(seg, band) {
+      if (seg.isPrice || seg.leaderAt != null) return false;
+      var text = segText(seg);
+      if (text.length > 42 || /[.!?]$/.test(text)) return false;
+      // centred, not flush with the band's left edge: a heading that sits over
+      // all the sub-columns belongs to the whole band ("THE BAR"), while one
+      // flush left belongs to its own column ("CURRIES" beside "NOT CURRIES")
+      if (seg.left <= band.left + medH * 1.5) return false;
+      return !/[a-z]/.test(text);
+    }
 
     var out = [];
-    columns.forEach(function (c, ci) {
-      c.segments.sort(function (a, b) { return a.cy - b.cy; });
-      var prevCy = null;
+    var bandsSeen = [];
+    bands.forEach(function (band, bi) {
+      var bandTop = Math.min.apply(null, band.segs.map(function (s) { return s.cy; }));
+      var firstRow = band.segs.filter(function (s) { return s.cy <= bandTop + Math.max(medH * 0.8, 1); });
+      var hoist = firstRow.length === 1 && isHeadingRow(firstRow[0], band) ? firstRow[0] : null;
+
+      var byCol = [];
+      band.segs.forEach(function (seg) {
+        if (seg === hoist) return;
+        var z = zoneOf(seg);
+        (byCol[z] = byCol[z] || []).push(seg);
+      });
+
       var textLines = [];
-      c.segments.forEach(function (seg) {
-        if (prevCy !== null && seg.cy - prevCy > bigBreak) textLines.push('');
-        textLines.push(segText(seg));
+      var groups = 0;
+      if (hoist) { textLines.push(segText(hoist)); groups++; }
+      byCol.forEach(function (segs) {
+        if (!segs.length) return;
+        if (groups++) textLines.push('');
+        segs.sort(function (a, b) { return (a.cy - b.cy) || (a.left - b.left); });
+        var prevCy = null;
+        segs.forEach(function (seg) {
+          if (prevCy !== null && seg.cy - prevCy > bigBreak) textLines.push('');
+          textLines.push(segText(seg));
+          prevCy = seg.cy;
+        });
+      });
+      if (!textLines.length) return;
+      if (bi > 0) out.push('');
+      out.push(textLines.join('\n'));
+      bandsSeen.push({ index: bandsSeen.length, top: band.top, bottom: band.bottom,
+                       left: band.left, right: band.right, segments: band.segs.length });
+    });
+
+    // per-column text stays available as metadata (the reference grid), even
+    // though the reading order above is banded
+    columns.forEach(function (c) {
+      var segs = c.segments.slice().sort(function (a, b) { return a.cy - b.cy; });
+      var prevCy = null;
+      var tl = [];
+      segs.forEach(function (seg) {
+        if (prevCy !== null && seg.cy - prevCy > bigBreak) tl.push('');
+        tl.push(segText(seg));
         prevCy = seg.cy;
       });
-      c.text = textLines.join('\n');
-      if (ci > 0) out.push('');
-      out.push(c.text);
+      c.text = tl.join('\n');
     });
 
     return {
@@ -307,12 +390,30 @@
       columns: columns.map(function (c, i) {
         return { index: i, left: c.left, right: c.right, segments: c.segments.length, text: c.text };
       }),
+      bands: bandsSeen,
       stats: {
         words: src.length, lines: lines.length, segments: segments.length,
-        columns: columns.length, pageW: pageW, medianHeight: medH
+        columns: columns.length, bands: bandsSeen.length, pageW: pageW, medianHeight: medH
       }
     };
   }
 
-  return { reconstruct: reconstruct, median: median };
+  /**
+   * pdf.js hands tracked (letter-spaced) type back as one item per word with
+   * spaces between the letters ("C H A A T"), and its word gaps then look
+   * exactly like its letter gaps. Swallow the spaces inside the item and let the
+   * item boundary be the word boundary — this is the only point where that
+   * information still exists. Returns null for ordinary text.
+   */
+  function collapseTracked(str) {
+    var s = String(str == null ? '' : str).trim();
+    if (s.length < 5) return null;
+    var toks = s.split(/\s+/).filter(Boolean);
+    if (toks.length < 3) return null;
+    var singles = toks.filter(function (t) { return t.length === 1; }).length;
+    if (singles < toks.length * 0.6) return null;
+    return toks.join('');
+  }
+
+  return { reconstruct: reconstruct, median: median, collapseTracked: collapseTracked };
 });

@@ -24,6 +24,19 @@ One `<div>` per laid-out line means the screen shows exactly the lines the PDF
 will print. Screen and PDF cannot disagree about a line break, because the
 breaks are decided before either renderer runs.
 
+## Interface theme
+
+The chrome is white, silver and blue: `--panel #ffffff`, `--chrome #f2f5f9`,
+`--line #dbe2ec`, `--text #131a24`, `--dim #667485`, `--accent #2f6fed`. Those six
+variables are the whole palette; changing the look means changing them and the few
+shades derived from them (button faces, hover states, the paper shadow), not the
+layout, which lives outside the design system in `src/design.js`.
+
+The **document's** colours are separate and deliberately untouched: `--paper`,
+`--ink` and `--accent` swatches in the left rail are the menu's own palette, and the
+sheet on the stage renders in those colours. Retheming the app must never change what
+prints.
+
 ## Run it
 
     cd menu-studio && python3 -m http.server 8791
@@ -79,6 +92,115 @@ both: the text (through the same column reconstruction the PDF path uses) and th
 palette, page shape and margins. The image stays available as a tracing underlay.
 Without the sidecar the image still gives you the design read, so the feature
 degrades rather than breaks.
+
+## The workspace — a menu is a folder, not a tab
+
+A menu arrives from a designer and stays in use for months. So a menu is a project
+on disk, not state in a browser:
+
+    projects/<slug>/
+        original.pdf     what the designer sent — never overwritten
+        objects.json     the extracted line objects, cached (re-open is instant)
+        edits.json       text edits, deletions, added boxes, image swaps
+        fonts/           font files added through the Fonts button
+        exports/         the twelve most recent PDFs
+        meta.json        name, pages, timestamps
+
+`Keep layout` opens the project list (`GET /projects`); "New from file…" turns a
+PDF into a project (`POST /projects`), which extracts the lines once and keeps them.
+Every change autosaves to `edits.json` 700 ms later, so closing the tab or reloading
+cannot cost work — the failure mode that used to lose an imported menu.
+
+Each project is self-contained: copy the folder to back it up, hand it back to the
+designer, or move it to another machine. `MENU_PROJECTS` overrides where they live.
+
+### What a client can do inside a menu
+
+| action | how | what the exporter does |
+|---|---|---|
+| reword a line | click it, type, Enter | redacts that line's ink, redraws the glyphs at the same origin with tracking preserved |
+| move a line | drag it | same rewrite at the new baseline; refused if it would land on other text, a rule or the page edge |
+| **add a text box** | `＋ Text`, then type | `insert_font` + `subset_fonts`, drawn glyph-at-a-time so tracking is honest — no slot to fit, but the font must resolve |
+| **delete a line** | click it, `Delete` (or the button) | redaction only: the ink goes, everything else on the page is untouched. Click the ghost to bring it back |
+| **load a font** | `Fonts`, pick a .ttf/.otf | stored in the project, served back for `@font-face`, and used for export — the client's new line prints in the face the designer shipped |
+| restyle a new box | font / size / colour row | values travel with the box and are applied at export |
+| swap a photo | click the dashed image slot | old pixels removed from that rect, new file fitted inside |
+| export | `Export PDF` | splices only what changed, writes a copy into `exports/` |
+
+Every one of those is one of four exporter operations — `edits`, `deletes`, `adds`,
+`images` — applied per page. A page with nothing on it is never rewritten.
+
+### What it is checked against
+
+`npm run test:workspace` exercises the workspace against a real menu: project
+creation, cached objects, byte-identical original, font upload and read-back, then an
+export with one edit, one delete and one added box. It asserts from the PDF itself —
+the added string is in the text layer at the requested coordinates, the deleted string
+count dropped by exactly one, and **no pixel outside the touched boxes changed**
+(0 px). `npm run test:project` runs the same comparison against a project's newest
+export, including its saved work.
+
+## Canvas mode — keep the page, edit its words
+
+`Keep layout` in the header opens a PDF without rebuilding it. This is the opposite
+trade to Import: Import produces a menu the engine can lay out (new sections, new
+dishes, pagination), Canvas keeps the designer's page and only rewrites what you
+touch.
+
+The PDF goes to a local sidecar (`sidecar/lines_server.py`, pymupdf) which returns
+one editable object per visual line with the page's own glyph positions, plus the
+art plate (the page with its text removed) and the font files. An untouched line is
+redrawn glyph-for-glyph where the original put it; only an edited line becomes a
+string, and the export splices it into the original content stream.
+
+    npm run canvas        # .lines/bin/python sidecar/lines_server.py  (port 8793)
+    npm start             # python3 -m http.server 8791
+
+Three text encodings have to be handled, and a real menu mixes them: positional
+(word gaps exist only as advances — `NOTCURRIES`), literal (space glyphs), and
+letter-spaced headings (one space glyph between *every* letter, `R E G I O N A L`).
+`sidecar/grouping.py` decides per line from the token shape — never from gap width,
+because a space glyph's own advance makes letter and word gaps measure the same.
+
+The guards live in `src/lines.js` (pure, unit-tested) and `src/canvas.js` (the DOM
+layer):
+
+| Rule | Behaviour |
+|---|---|
+| fit | a longer string shrinks at most 8% to fit its own slot, then refuses |
+| squeeze | `Shift+Enter` explicitly allows 60% |
+| growth cap | `max_width = min(next text/rule, ink x 3 + 12)` — a `GF` legend cannot become a sentence |
+| drop | a dragged line may not land on another line, on a rule, or off the page |
+| snap | to other lines' baselines and left edges, within 2.5 pt |
+| undo / persist | `⌘Z` (60 deep); the edit set survives a reload via localStorage |
+| photo | click a placed image to replace it: the old pixels in that rect are removed, the new file is fitted inside |
+| fit / zoom | opens at fit-width (never above 100%, so the raster plate stays sharp), with `− 100% +`; the percentage button cycles fit width → fit page → 100% |
+
+The page is an SVG sized by a single scale factor, so a small window shows the whole
+sheet instead of a clipped corner: at 980x620 an A4 page opens at 77%, and fit-page is
+31%. Pointer distances are divided by `2 * scale`, so dragging and the inline input stay
+exact at any zoom (verified: an 80 px drag at 31% moves the line 95.669 pt, expected
+95.67). Scrolling is native — the overlay scrolls on wheel over the page.
+
+Every page of the document is imported and stacked, and edits carry a document-wide
+object id, so a change on page 3 lands on page 3 and the other sheets are never
+touched. Faces are chosen by measurement, not by name: for each PDF font the
+candidate whose advance width best matches the document's own text wins, sampled from
+an untracked line (a letter-spaced heading's ink is wider than any natural advance,
+which would pick the heaviest cut available), and a name with no weight in it prefers
+a Regular file.
+
+Measured on the ELA menu (217 lines, 595x842 pt): every line lands within 1.5 px of
+the PDF at 144 dpi (median 0.11 px across, 0.32 px down), and an export of three
+edits changes **0 px outside those three lines** — page box, fonts and every other
+glyph untouched. On a three-page document an edit on page 2 changed only page 2, with
+0 px differing elsewhere on any page; a replaced logo removed the original artwork
+with no ghosting. `test/canvas-lines.py` and `test/canvas-export-check.py` are the
+gates; `test/lines.js` pins the grouping output the guards rely on.
+
+Raw pixel diff is *not* a gate: a browser and MuPDF disagree about antialiasing, so
+half a pixel of rasterizer snapping shows up as a 30% pixel diff on 6 pt type. Judge
+placement per line, not per pixel.
 
 ### OCR engine choice, measured
 

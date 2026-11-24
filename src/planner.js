@@ -112,10 +112,38 @@
     return h;
   }
 
+  /**
+   * A reference's detected column ranges can overlap: a long dish name reaches
+   * into the next column and the price column sits between the two, so
+   * [left,right] boxes are not a partition. Used as text boxes they stack column
+   * two on top of column one. Trim each column at the next column's left edge so
+   * the grid is a partition; if the page is too narrow to honour it, fall back to
+   * an even grid rather than print two columns over each other.
+   */
+  function deoverlap(cols, inner, gutter) {
+    var n = cols.length, out = [], MIN = 1.0;
+    for (var i = 0; i < n; i++) {
+      var x = cols[i].x, w = cols[i].w;
+      if (i < n - 1) w = Math.min(w, cols[i + 1].x - x - gutter);
+      w = Math.min(w, inner.x + inner.w - x);
+      out.push({ x: x, w: w });
+    }
+    var tooNarrow = out.some(function (c) { return !(c.w >= MIN); });
+    if (tooNarrow) {
+      var even = [], w2 = (inner.w - gutter * (n - 1)) / n;
+      for (var j = 0; j < n; j++) {
+        even.push({ x: +(inner.x + j * (w2 + gutter)).toFixed(3), w: +w2.toFixed(3) });
+      }
+      return even;
+    }
+    return out.map(function (c) { return { x: +c.x.toFixed(3), w: +c.w.toFixed(3) }; });
+  }
+
   /** Normalise a reference's column x-ranges into page-inch columns. */
   function columnsFrom(reference, page, opts) {
     opts = opts || {};
     var inner = opts.inner || { x: 0.55, w: page.w - 1.1 };
+    var gutter = opts.gutter == null ? 0.14 : opts.gutter;
     var refs = (reference && reference.columns) || null;
 
     if (refs && refs.length) {
@@ -123,11 +151,12 @@
       var minX = Math.min.apply(null, refs.map(function (c) { return c.left; }));
       var maxX = Math.max.apply(null, refs.map(function (c) { return c.right; }));
       var span = Math.max(1, maxX - minX);
-      return refs.map(function (c) {
+      var mapped = refs.map(function (c) {
         var x0 = inner.x + ((c.left - minX) / span) * inner.w;
         var x1 = inner.x + ((c.right - minX) / span) * inner.w;
         return { x: +x0.toFixed(3), w: +Math.max(1.2, x1 - x0).toFixed(3) };
       }).sort(function (a, b) { return a.x - b.x; });
+      return deoverlap(mapped, inner, gutter);
     }
 
     // No reference: a portrait sheet gets two columns and a landscape one three,
@@ -150,27 +179,48 @@
    */
   function pack(sections, columns, opts) {
     var patterns = sections.map(inferPattern);
-    // balance against the NARROWEST column: the worst case is what decides fit
+    // start from the NARROWEST column: before any section has a home, that is
+    // the only honest width to measure at
     var narrow = Math.min.apply(null, columns.map(function (c) { return c.w; }));
     var heights = sections.map(function (s, i) {
       return sectionHeight(s, narrow, patterns[i], opts);
     });
-    var total = heights.reduce(function (a, b) { return a + b; }, 0);
-    var target = total / Math.max(1, columns.length);
 
-    var placed = [], col = 0, used = 0;
-    sections.forEach(function (s, i) {
-      var h = heights[i];
-      // advance only when this section would visibly overshoot the column's
-      // share — one rule, no look-ahead, so order can never be disturbed
-      if (col < columns.length - 1 && used > 0 && used + h > target * 1.08) {
-        col++; used = 0;
-      }
-      placed.push({ section: s, pattern: patterns[i], height: h, col: col });
-      used += h;
+    function assign(hs) {
+      var total = hs.reduce(function (a, b) { return a + b; }, 0);
+      var target = total / Math.max(1, columns.length);
+      var placed = [], col = 0, used = 0;
+      sections.forEach(function (s, i) {
+        var h = hs[i];
+        // advance only when this section would visibly overshoot the column's
+        // share — one rule, no look-ahead, so order can never be disturbed
+        if (col < columns.length - 1 && used > 0 && used + h > target * 1.08) {
+          col++; used = 0;
+        }
+        placed.push({ section: s, pattern: patterns[i], height: h, col: col });
+        used += h;
+      });
+      return { placed: placed, total: total, target: target };
+    }
+
+    var first = assign(heights);
+
+    // A section that lands in a wide column does not wrap like one in the
+    // narrowest column. Re-measure at the width each section actually got and
+    // repack once: measuring everything at the worst case cost a whole extra
+    // sheet on a four-column menu.
+    var refined = first.placed.map(function (p, i) {
+      var w = columns[Math.min(p.col, columns.length - 1)].w;
+      return sectionHeight(p.section, w, patterns[i], opts);
     });
-
-    return { placed: placed, heights: heights, patterns: patterns, total: total, target: target };
+    var moved = refined.some(function (h, i) { return Math.abs(h - heights[i]) > 0.01; });
+    if (moved) {
+      var second = assign(refined);
+      return { placed: second.placed, heights: refined, patterns: patterns,
+               total: second.total, target: second.target };
+    }
+    return { placed: first.placed, heights: heights, patterns: patterns,
+             total: first.total, target: first.target };
   }
 
   /**

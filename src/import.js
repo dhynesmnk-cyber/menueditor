@@ -122,6 +122,7 @@
       .replace(/[\s•·*\u2022\-–—.:]+$/, '')
       .replace(/\s{2,}/g, ' ')
       .replace(/^["'“”]|["'“”]$/g, '')
+      .replace(/[“”„«»]/g, '')          // quotes inside a name are decoration
       .trim();
   }
 
@@ -198,6 +199,56 @@
     };
   }
 
+  // A street address reads like a dish to every rule here ("4650 Donald Ross
+  // Road, Suite 100" ends in a number), so it is caught before the price rules.
+  var ADDRESS_RE = /^\d{1,5}\s+[A-Za-z].*\b(road|rd|street|st|avenue|ave|blvd|boulevard|drive|lane|way|suite|ste|court|place|highway|hwy|floor|fl)\b/i;
+
+  /**
+   * A long dish name wraps inside its own column, so its price lands one or two
+   * lines below where the name starts:
+   *
+   *     BELL & EVANS CHICKEN
+   *     WINGS
+   *     21 GF
+   *
+   * read line by line that is a bogus section ("BELL & EVANS CHICKEN"), a second
+   * bogus section ("WINGS") and a stray price. Joining the fragment to the line
+   * that carries the price is what a reader does without noticing.
+   */
+  function tryWrappedDish(lines, from) {
+    var head = String(lines[from] || '').trim();
+    if (!head || !isAllCaps(head) || /\d/.test(head) || head.length > 40) return null;
+    if (head.split(/\s+/).length < 2) return null;          // a bare heading is not a wrapped name
+    if (/[·:]$/.test(head)) return null;
+    if (SECTION_WORDS.test(head.replace(/[:：\s]+$/, ''))) return null;
+
+    var parts = [head];
+    for (var k = from + 1, steps = 0; k < lines.length && steps < 3; k++) {
+      var t = String(lines[k]).trim();
+      if (!t) return null;                       // a blank line ends the name
+      steps++;
+      var peeled = stripTailTags(t);
+
+      if (steps > 1 && isPriceOnlyLine(peeled.text)) {
+        return { name: parts.join(' '), price: peeled.text, tags: peeled.tags, end: k };
+      }
+      var p = splitPrice(peeled.text);
+      if (p) {
+        var nm = cleanName(p.name);
+        if (!nm || !isAllCaps(nm)) return null;   // heading over a title-case dish
+        if (parts.join(' ').length + nm.length > 52) return null;
+        return { name: parts.concat(nm).join(' '), price: p.price, tags: peeled.tags, end: k };
+      }
+      if (steps === 1 && isAllCaps(t) && !/\d/.test(t) && t.length <= 18 &&
+          t.split(/\s+/).length <= 2 && !SECTION_WORDS.test(t)) {
+        parts.push(t);
+        continue;
+      }
+      return null;
+    }
+    return null;
+  }
+
   function sectionScore(line) {
     var t = String(line).trim();
     if (!t || t.length > 42) return 0;
@@ -260,6 +311,11 @@
       if (/^[-=_*~·—–]{3,}$/.test(trimmed)) { lastItem = null; continue; }
 
       if (CONTACT_RE.test(trimmed)) {
+        notes.push(trimmed);
+        continue;
+      }
+
+      if (ADDRESS_RE.test(trimmed)) {
         notes.push(trimmed);
         continue;
       }
@@ -343,6 +399,21 @@
       }
 
       if (score >= 3) {
+        // A wrapped dish name is not a heading, even though it is all caps and
+        // has no price of its own — the price is one or two lines below.
+        var wrapped = tryWrappedDish(lines, i);
+        if (wrapped) {
+          if (pendingSection) { ensureSection(pendingSection); pendingSection = null; }
+          else if (!cur) ensureSection(opts.defaultSection || 'Menu');
+          lastItem = {
+            name: cleanName(wrapped.name), desc: '', price: normPrice(wrapped.price),
+            tags: (wrapped.tags || []).map(function (t) { return t.toUpperCase(); }),
+            _conf: 'wrapped', _line: i + 1
+          };
+          cur.items.push(lastItem);
+          i = wrapped.end;
+          continue;
+        }
         // An all-caps name whose price sits on the line below is a DISH, not a
         // heading — this is how a wine list sets "CRÉMANT DE BOURGOGNE NV" over
         // "verre 17 / bottle 80", while "SPARKLING ROSÉ" above another wine name
@@ -358,6 +429,13 @@
           cur.items.push(lastItem);
           continue;
         }
+        // A masthead strapline or footer ("ELA CURRY & COCKTAILS · DINNER") is
+        // set in caps with a middot and carries no dishes: it is a note, not a
+        // section, or it would open an empty section at the foot of the page.
+        if (/·/.test(trimmed) && !/\d/.test(trimmed)) {
+          notes.push(trimmed);
+          continue;
+        }
         ensureSection(cleanName(trimmed));
         lastItem = null;
         continue;
@@ -369,6 +447,14 @@
         } else {
           notes.push(trimmed);
         }
+        continue;
+      }
+
+      if (cur && !cur.items.length && !cur.note && trimmed.length <= 140 &&
+          /^[a-z(]/.test(trimmed)) {
+        // the line under a heading that has no dishes yet is the section's own
+        // subtitle ("basmati rice, and a spoon for the middle")
+        cur.note = trimmed;
         continue;
       }
 
