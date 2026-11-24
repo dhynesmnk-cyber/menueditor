@@ -1527,7 +1527,7 @@
 
     var picker = document.createElement('input');
     picker.type = 'file';
-    picker.accept = 'application/pdf';
+    picker.accept = 'application/pdf,image/png,image/jpeg,image/webp';
     picker.style.display = 'none';
     document.body.appendChild(picker);
 
@@ -1579,9 +1579,20 @@
         rows.innerHTML = '<div class="empty">reading ' + esc(f.name) + '…</div>';
         try {
           var buf = await f.arrayBuffer();
+          var head = new Uint8Array(buf.slice(0, 8));
+          var isPdf = head[0] === 0x25 && head[1] === 0x50;      // %P
+          var isImg = (head[0] === 0x89 && head[1] === 0x50) ||    // PNG
+                      (head[0] === 0xFF && head[1] === 0xD8) ||    // JPEG
+                      (head[0] === 0x52 && head[1] === 0x49);      // RIFF/WebP
+          if (!isPdf && !isImg) {
+            rows.innerHTML = '<div class="empty">that is a PDF or an image (PNG, JPEG, WebP)</div>';
+            return;
+          }
+          var body = { name: f.name.replace(/\.[a-z0-9]+$/i, '') };
+          if (isPdf) body.pdf = toB64(buf); else { body.image = toB64(buf); body.filename = f.name; }
           var res = await fetch(SERVICE + '/projects', {
             method: 'POST', headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ name: f.name.replace(/\.pdf$/i, ''), pdf: toB64(buf) })
+            body: JSON.stringify(body)
           });
           var j = await res.json();
           if (!res.ok) { rows.innerHTML = '<div class="empty">' + esc(j.error || res.status) + '</div>'; return; }

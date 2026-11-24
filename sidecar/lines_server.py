@@ -133,6 +133,12 @@ class Handler(BaseHTTPRequestHandler):
             if parts and parts[0] == "projects":
                 if len(parts) == 1:
                     payload = self._payload()
+                    image = _b64(payload.get("image"))
+                    if image:
+                        self._json(200, workspace.create_image(payload.get("name") or "Menu",
+                                                               image,
+                                                               payload.get("filename") or ""))
+                        return
                     pdf = _b64(payload.get("pdf"))
                     if not pdf.startswith(b"%PDF"):
                         self._json(400, {"error": "missing pdf"})
