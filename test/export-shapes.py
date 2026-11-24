@@ -82,6 +82,28 @@ def main():
     ok(text.count(gone["text"]) == before.count(gone["text"]) - 1, "deleted line is gone",
        "%d -> %d" % (before.count(gone["text"]), text.count(gone["text"])))
 
+    # ---- a style-only edit: the same words, another face and another ink -----
+    fav = (get("/projects/" + slug).get("fonts") or [])
+    family = fav[0]["family"] if fav else "Lato"
+    head = next(o for o in objs
+                if o is not victim and " " in o["text"] and len(o["text"]) <= 16)
+    print("restyle %r -> %s / #c81e1e" % (head["text"], family))
+    out2, h2 = post("/projects/" + slug + "/export",
+                    {"edits": [[head["gi"], {"font": family, "color": "#c81e1e"}]],
+                     "deletes": [], "adds": [], "images": []})
+    ok(h2.get("x-edits-applied") == "1", "a style-only edit was applied",
+       "%s (refused %s)" % (h2.get("x-edits-applied"), h2.get("x-edits-refused")))
+    doc2 = pymupdf.open(stream=out2, filetype="pdf")
+    spans = [s for b in doc2[0].get_text("dict")["blocks"]
+             for ln in b.get("lines", []) for s in ln["spans"]
+             if s["text"].strip() == head["text"].strip()]
+    ok(bool(spans) and any(s["color"] == 0xC81E1E for s in spans),
+       "the restyled line prints in the new colour",
+       ", ".join("#%06x" % s["color"] for s in spans[:3]))
+    ok(bool(spans) and any(family.split()[0].lower() in s["font"].lower() for s in spans),
+       "the restyled line prints in the new face",
+       ", ".join(sorted({s["font"] for s in spans})))
+
     if not os.environ.get("KEEP"):
         shutil.rmtree(os.path.join(ROOT, "projects", slug), ignore_errors=True)
         print("(removed the test project — KEEP=1 to inspect it)")

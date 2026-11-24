@@ -107,7 +107,9 @@
       size: e.size !== undefined ? e.size : o.size,
       track: e.track !== undefined ? e.track : baseTrack(o),
       x: e.x !== undefined ? e.x : o.x,
-      y: e.y !== undefined ? e.y : o.y
+      y: e.y !== undefined ? e.y : o.y,
+      font: e.font !== undefined ? e.font : o.font,
+      color: e.color !== undefined ? e.color : o.color
     };
   }
 
@@ -206,6 +208,8 @@
     if (next.track !== undefined && Math.abs(next.track - baseTrack(o)) < 0.002) delete next.track;
     if (next.x !== undefined && Math.abs(next.x - o.x) <= 0.05) delete next.x;
     if (next.y !== undefined && Math.abs(next.y - o.y) <= 0.05) delete next.y;
+    if (next.font !== undefined && next.font === o.font) delete next.font;
+    if (next.color !== undefined && String(next.color).toLowerCase() === String(o.color).toLowerCase()) delete next.color;
     if (Object.keys(next).length) edits.set(i, next); else edits.delete(i);
     return edits.get(i) || {};
   }
@@ -217,7 +221,7 @@
       var v = effective(objects, edits, gi);
       var o = objects[gi];
       out.push({ gi: gi, i: gi, page: o ? o.page : 0, text: v.text, size: v.size,
-                 track: v.track, x: v.x, y: v.y });
+                 track: v.track, x: v.x, y: v.y, font: v.font, color: v.color });
     });
     return out;
   }

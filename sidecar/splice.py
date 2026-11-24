@@ -133,13 +133,17 @@ def build(doc_bytes, edits=None, images=None, adds=None, deletes=None, font_path
         y = float(patch.get("y", o["y"]))
         size = float(patch.get("size", o["size"]))
         track = float(patch.get("track", o["track_em"] if o["letter_spaced"] else 0.0))
+        # a style change travels with the text: same slot, another face or ink
+        family = patch.get("font") or o["font"]
+        color = patch.get("color") or o["color"]
         moved = abs(x - o["x"]) > 0.05 or abs(y - o["y"]) > 0.05
         retracked = abs(track - (o["track_em"] if o["letter_spaced"] else 0.0)) > 0.002
         resized = abs(size - o["size"]) > 0.01
-        if text == o["text"] and not moved and not retracked and not resized:
+        restyled = family != o["font"] or str(color).lower() != str(o["color"]).lower()
+        if text == o["text"] and not moved and not retracked and not resized and not restyled:
             continue
 
-        font = _face(doc, o["font"])
+        font = _face(doc, family)
         limit = float(o.get("max_width") or o["ink_width"])
         w = _width_of(font, text, size, track)
         if w > limit:
@@ -155,7 +159,8 @@ def build(doc_bytes, edits=None, images=None, adds=None, deletes=None, font_path
                                   / (size * max(1, len(text) - 1))), 4)
 
         cuts.append((o["page"], _box(o)))
-        applied.append({"o": o, "text": text, "x": x, "y": y, "size": size, "track": track})
+        applied.append({"o": o, "text": text, "x": x, "y": y, "size": size, "track": track,
+                        "font": family, "color": color})
 
     # ---- deleted lines: the ink goes, nothing is drawn back ------------------
     for d in deletes:
@@ -238,7 +243,7 @@ def build(doc_bytes, edits=None, images=None, adds=None, deletes=None, font_path
     for a in applied:
         o = a["o"]
         draw(o["page"], a["text"], a["x"], a["y"], a["size"], a["track"],
-             o["font"], _rgb(o["color"]))
+             a.get("font") or o["font"], _rgb(a.get("color") or o["color"]))
 
     added = 0
     for a in adds:

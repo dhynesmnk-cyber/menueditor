@@ -207,6 +207,9 @@
       });
     }
     function cssFor(key) { return projFam[key] || fam[key] || 'serif'; }
+    // a line's `font` is the PDF's own face name; once the client restyles it the
+    // value is a CSS family, which is already usable as-is
+    function cssForFont(key) { return projFam[key] || fam[key] || key || 'serif'; }
     var styleEl = document.createElement('style');
     styleEl.textContent = faces.join('\n');
     document.head.appendChild(styleEl);
@@ -383,14 +386,15 @@
       if (imageEdits.size) bits.push(imageEdits.size + ' photo' + (imageEdits.size === 1 ? '' : 's'));
       status(n ? bits.join(' · ') : 'no changes');
     }
-    function measureFor(i) {
-      var o = objects[i];
-      return function (text, size, track) { return measure(text, size, track, fam[o.font]); };
+    function measureFor(i, fontOverride) {
+      var v = root.MenuLines.effective(objects, edits, i);
+      var f = cssForFont(fontOverride || v.font);
+      return function (text, size, track) { return measure(text, size, track, f); };
     }
     function widthOfEdit(i) {
       if (!edits.has(i)) return objects[i].ink_width;
       var v = root.MenuLines.effective(objects, edits, i);
-      return measure(v.text, v.size, v.track, fam[objects[i].font]) || objects[i].ink_width;
+      return measure(v.text, v.size, v.track, cssForFont(v.font)) || objects[i].ink_width;
     }
 
     // ---- work: everything the client changed, in one object ------------------
@@ -498,13 +502,15 @@
       countStatus();
       status(statusEl.textContent + ' (undo)');
     }
-    function setLive(g, text, size, track) {
+    function setLive(g, text, size, track, font, color) {
       var t = g.querySelector('.live');
       g.querySelector('.ink').style.display = 'none';
       t.style.display = '';
       t.textContent = text;
       t.setAttribute('font-size', size);
       t.setAttribute('letter-spacing', (track * size).toFixed(4));
+      if (font) t.setAttribute('font-family', cssForFont(font));
+      if (color) t.setAttribute('fill', color);
     }
     function renderLine(i) {
       var g = lines.get(i);
@@ -518,7 +524,7 @@
         return;
       }
       var v = root.MenuLines.effective(objects, edits, i);
-      setLive(g, v.text, v.size, v.track);
+      setLive(g, v.text, v.size, v.track, v.font, v.color);
       var dx = v.x - objects[i].x, dy = v.y - objects[i].y;
       g.setAttribute('transform', (dx || dy) ? 'translate(' + dx.toFixed(3) + ' ' + dy.toFixed(3) + ')' : '');
       g.classList.add('edited');
@@ -696,19 +702,28 @@
         : 'line restored');
     }
 
-    // ---- style row: only for a box the client added -------------------------
-    function showStyleRow(a) {
+    // ---- style row: for a selected line or an added box ----------------------
+    function fontOptions(current) {
       var keys = Object.keys(projFam).map(function (k) { return [k, 'project']; })
         .concat(Object.keys(fam).map(function (k) { return [k, 'document']; }));
-      var seen = {}, opts = '';
+      var seen = {}, opts = '', hit = false;
       keys.forEach(function (pair) {
         if (seen[pair[0]]) return;
         seen[pair[0]] = 1;
-        opts += '<option value="' + esc(pair[0]) + '"' + (a && a.font === pair[0] ? ' selected' : '') +
+        if (pair[0] === current) hit = true;
+        opts += '<option value="' + esc(pair[0]) + '"' + (pair[0] === current ? ' selected' : '') +
                 '>' + esc(pair[0]) + ' · ' + pair[1] + '</option>';
       });
+      // a line already restyled to a face that is not in either list keeps it
+      if (!hit && current) {
+        opts = '<option value="' + esc(current) + '" selected>' + esc(current) + '</option>' + opts;
+      }
+      return opts;
+    }
+
+    function showStyleRow(a) {
       styleRow.innerHTML =
-        '<label>font</label><select data-role="fontsel">' + opts + '</select>' +
+        '<label>font</label><select data-role="fontsel">' + fontOptions(a && a.font) + '</select>' +
         '<label>size</label><input type="number" data-role="addsize" min="4" max="120" step="0.5" value="' +
         (a ? a.size : 12) + '">' +
         '<label>colour</label><input type="color" data-role="addcolor" value="' +
@@ -734,6 +749,36 @@
       styleRow.querySelector('[data-role=adddone]').onclick = function () { selectAdd(null); };
       styleRow.querySelector('[data-role=addremove]').onclick = function () {
         if (selAdd) removeAdd(selAdd.id);
+      };
+    }
+
+    // style for a line that already exists: same row, applied to the selected line
+    function showLineStyleRow(i) {
+      var v = root.MenuLines.effective(objects, edits, i);
+      var hex = /^#[0-9a-f]{6}$/i.test(String(v.color)) ? v.color : '#131a24';
+      styleRow.innerHTML =
+        '<label>font</label><select data-role="lsfont">' + fontOptions(v.font) + '</select>' +
+        '<label>size</label><input type="number" data-role="lssize" min="4" max="120" step="0.5" value="' +
+        (Math.round(v.size * 10) / 10) + '">' +
+        '<label>colour</label><input type="color" data-role="lscolor" value="' + hex + '">' +
+        '<span class="sp"></span><span class="hint">applies to this line only · Enter to keep</span>';
+      styleRow.classList.add('on');
+      styleRow.querySelector('[data-role=lsfont]').onchange = function (ev) {
+        if (!editing) return;
+        editing.font = ev.target.value;
+        applyLive();
+      };
+      styleRow.querySelector('[data-role=lssize]').oninput = function (ev) {
+        if (!editing) return;
+        var n = parseFloat(ev.target.value);
+        if (!(n > 2)) return;
+        editing.size = n;
+        applyLive();
+      };
+      styleRow.querySelector('[data-role=lscolor]').oninput = function (ev) {
+        if (!editing) return;
+        editing.color = ev.target.value;
+        applyLive();
       };
     }
 
@@ -816,15 +861,17 @@
       inp.style.top = r.top + 'px';
       inp.style.width = Math.max(r.width + 80, 160) + 'px';
       inp.style.height = Math.max(r.height, 14) + 'px';
-      inp.style.fontSize = (o.size * Z * (views[o.page] ? views[o.page].scale : 1)).toFixed(2) + 'px';
-      inp.style.fontFamily = fam[o.font] || 'serif';
-      inp.style.color = o.color;
+      inp.style.fontSize = (v.size * Z * (views[o.page] ? views[o.page].scale : 1)).toFixed(2) + 'px';
+      inp.style.fontFamily = cssForFont(v.font);
+      inp.style.color = v.color;
       document.body.appendChild(inp);
       inp.focus();
       inp.select();
-      editing = { g: g, i: i, inp: inp, size: o.size, track: v.track,
+      editing = { g: g, i: i, inp: inp, size: v.size, track: v.track,
+                  font: v.font, color: v.color,
                   floor: root.MenuLines.MIN_FIT, fits: true };
       trkEl.classList.add('on');
+      showLineStyleRow(i);
       slider.value = v.track;
       trkval.textContent = v.track.toFixed(3) + ' em';
       applyLive();
@@ -844,10 +891,10 @@
       if (!editing) return;
       var i = editing.i, o = objects[i];
       var res = root.MenuLines.fit(o, editing.inp.value, editing.size, editing.track,
-                                  measureFor(i), o.max_width, editing.floor);
+                                  measureFor(i, editing.font), o.max_width, editing.floor);
       editing.fits = res.fits;
       editing.sizeUsed = res.size;
-      setLive(editing.g, editing.inp.value, res.size, res.track);
+      setLive(editing.g, editing.inp.value, res.size, res.track, editing.font, editing.color);
       editing.inp.classList.toggle('toowide', !res.fits);
       if (!res.fits) {
         status('too long — needs ' + res.w.toFixed(0) + 'pt, slot is ' + res.max.toFixed(0) +
@@ -873,6 +920,7 @@
       editing = null;
       e.inp.remove();
       trkEl.classList.remove('on');
+      styleRow.classList.remove('on');
       if (e.g) e.g.classList.remove('sel');       // a leftover outline reads as a bug
       if (!e.fits) {
         status('edit refused — text too long for this slot');
@@ -882,7 +930,8 @@
       var v = root.MenuLines.effective(objects, edits, e.i);
       pushUndo();
       root.MenuLines.applyEdit(edits, objects, e.i,
-        { text: e.inp.value, size: e.sizeUsed, track: e.track, x: v.x, y: v.y });
+        { text: e.inp.value, size: e.sizeUsed, track: e.track, x: v.x, y: v.y,
+          font: e.font, color: e.color });
       renderLine(e.i);
       persist();
       countStatus();
@@ -902,6 +951,7 @@
       editing = null;
       e.inp.remove();
       trkEl.classList.remove('on');
+      styleRow.classList.remove('on');
       if (e.g) e.g.classList.remove('sel');
       renderLine(e.i);
     }
