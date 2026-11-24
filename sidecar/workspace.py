@@ -248,6 +248,7 @@ def open_project(slug):
         "lines": lines,
         "work": _read_json(os.path.join(d, "edits.json"), _empty_work()),
         "fonts": fonts(slug),
+        "manifest": manifest(slug),
     }
 
 
@@ -320,6 +321,52 @@ def save_export(slug, pdf_bytes):
 
 
 # ── fonts ─────────────────────────────────────────────────────────────────────
+DEFAULT_MANIFEST = {
+    "version": 1,
+    "note": "",
+    "lock": {"lines": [], "text": [], "pages": []},
+    "allow": {"addText": True, "pageOps": True, "restyle": True, "deleteLines": True},
+}
+
+
+def manifest(slug):
+    """What the designer allowed on this menu.
+
+    A menu arrives from a studio with rules attached: this line is the brand's, that page is
+    the layout, the client may set prices and nothing else. The rules live in the project as
+    plain JSON so they travel with the file, and both the canvas and the exporter read them —
+    the exporter enforcing them is what stops a stale tab from writing over a locked line.
+    """
+    m = _read_json(os.path.join(_dir(slug), "manifest.json"), {})
+    if not m:
+        return json.loads(json.dumps(DEFAULT_MANIFEST))
+    out = json.loads(json.dumps(DEFAULT_MANIFEST))
+    out.update({k: v for k, v in m.items() if k not in ("lock", "allow")})
+    for group in ("lock", "allow"):
+        if isinstance(m.get(group), dict):
+            out[group].update(m[group])
+    return out
+
+
+def write_manifest(slug, data):
+    d = _dir(slug)
+    clean = json.loads(json.dumps(DEFAULT_MANIFEST))
+    clean.update({k: v for k, v in (data or {}).items() if k not in ("lock", "allow")})
+    for group in ("lock", "allow"):
+        if isinstance((data or {}).get(group), dict):
+            clean[group].update(data[group])
+    for key in ("lines", "text", "pages"):
+        clean["lock"][key] = [x for x in (clean["lock"].get(key) or [])
+                              if isinstance(x, (int, str)) and str(x).strip()]
+    for key in ("addText", "pageOps", "restyle", "deleteLines"):
+        clean["allow"][key] = bool(clean["allow"].get(key))
+    _write_json(os.path.join(d, "manifest.json"), clean)
+    meta = _read_json(os.path.join(d, "meta.json"))
+    meta["updated"] = _now()
+    _write_json(os.path.join(d, "meta.json"), meta)
+    return clean
+
+
 def fonts(slug):
     """[{family, file}] for every font file in the project."""
     d = os.path.join(_dir(slug), "fonts")

@@ -131,8 +131,29 @@ def _page_map(original_count, page_ops):
     return m
 
 
+def _lock_matcher(locks, by_gi):
+    """Which lines the designer locked: by id, or by the words on them.
+
+    A studio ships the rules with the file and thinks in names, not glyph ids — so a lock can
+    name a line by id or by a substring of its text, and both sides resolve it to the same set.
+    """
+    locks = locks or {}
+    ids = set()
+    for v in (locks.get("lines") or []):
+        gi = _int(v)
+        if gi is not None:
+            ids.add(gi)
+    needles = [str(t).strip().lower() for t in (locks.get("text") or []) if str(t).strip()]
+    if needles:
+        for gi, o in by_gi.items():
+            low = str(o.get("text") or "").lower()
+            if any(n in low for n in needles):
+                ids.add(gi)
+    return ids
+
+
 def build(doc_bytes, edits=None, images=None, adds=None, deletes=None, font_paths=None,
-          page_ops=None):
+          page_ops=None, manifest=None):
     """Apply text edits, deletions, added boxes and image swaps; returns (pdf, info)."""
     edits = edits or []
     images = images or []
@@ -151,6 +172,23 @@ def build(doc_bytes, edits=None, images=None, adds=None, deletes=None, font_path
     applied, refused, removed = [], [], []
     cuts = []                                    # (page, rect) to redact
     original_count = doc.page_count
+
+    # ---- the designer's rules, enforced here and not only in the canvas ------
+    manifest = manifest or {}
+    locks = manifest.get("lock") or {}
+    allow = manifest.get("allow") or {}
+    locked = _lock_matcher(locks, by_gi)
+    locked_pages = set()
+    for v in (locks.get("pages") or []):
+        p = _int(v)
+        if p is not None:
+            locked_pages.add(p)
+    if allow.get("pageOps") is False:
+        page_ops = {}
+    else:
+        page_ops = {k: list(v or []) for k, v in page_ops.items()}
+        page_ops["delete"] = [p for p in page_ops.get("delete") or []
+                              if _int(p) not in locked_pages]
 
     # ---- new sheets first, so the pages the payload addresses all exist -----
     # A copy keeps the art and loses the words: the lines of a duplicated sheet are
@@ -182,6 +220,12 @@ def build(doc_bytes, edits=None, images=None, adds=None, deletes=None, font_path
         if o is None:
             refused.append({"gi": gi, "reason": "no such line"})
             continue
+        if gi in locked:
+            refused.append({"gi": gi, "reason": "locked by the designer",
+                            "text": o["text"][:40]})
+            continue
+        if allow.get("restyle") is False:
+            patch = {k: v for k, v in patch.items() if k not in ("font", "color")}
         text = patch.get("text", o["text"])
         x = float(patch.get("x", o["x"]))
         y = float(patch.get("y", o["y"]))
@@ -225,6 +269,13 @@ def build(doc_bytes, edits=None, images=None, adds=None, deletes=None, font_path
         o = by_gi.get(gi)
         if o is None:
             refused.append({"gi": gi, "reason": "no such line"})
+            continue
+        if gi in locked:
+            refused.append({"gi": gi, "reason": "locked by the designer",
+                            "text": o["text"][:40]})
+            continue
+        if allow.get("deleteLines") is False:
+            refused.append({"gi": gi, "reason": "deleting lines is not allowed here"})
             continue
         cuts.append((o["page"], _box(o, pad=0.9)))
         removed.append(o)
@@ -303,6 +354,9 @@ def build(doc_bytes, edits=None, images=None, adds=None, deletes=None, font_path
     added = 0
     for a in adds:
         try:
+            if allow.get("addText") is False:
+                refused.append({"add": a.get("id"), "reason": "adding text is not allowed here"})
+                continue
             pno = pmap.get(int(a.get("page", 0)), int(a.get("page", 0)))
             if pno < 0 or pno >= doc.page_count:
                 continue

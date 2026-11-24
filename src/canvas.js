@@ -61,6 +61,8 @@
       '.cv-pgctl .cv-btn{padding:4px 8px}',
       '.cv-pnum{position:absolute;left:0;top:-16px;font:11px/1 ui-monospace,monospace;color:#667485}',
       '.cv-line rect.hit{fill:transparent;cursor:move}',
+      '.cv-line.locked rect.hit{stroke:rgba(19,26,36,.38);stroke-width:.5;stroke-dasharray:2 2;cursor:not-allowed}',
+      '.cv-line.locked .ink{opacity:.92}',
       '.cv-line.sel rect.hit{stroke:#2f6fed;stroke-width:.6;fill:rgba(47,111,237,.06)}',
       '.cv-line.edited rect.hit{stroke:rgba(47,111,237,.60);stroke-width:.6}',
       '.cv-boxes .cv-line rect.hit{stroke:rgba(47,111,237,.35);stroke-width:.4;stroke-dasharray:2 2}',
@@ -133,6 +135,7 @@
       '<div class="cv-bar">' +
       '  <strong data-role="pname">Canvas mode</strong>' +
       '  <span class="cv-status" data-role="status">no edits</span>' +
+      '  <span class="cv-status" data-role="locknote" style="display:none"></span>' +
       '  <span class="sp"></span>' +
       '  <button class="cv-btn" data-role="addtext" title="add a text box (T)">＋ Text</button>' +
       '  <button class="cv-btn" data-role="delete" title="delete the selected line (Del)">Delete</button>' +
@@ -315,6 +318,60 @@
     var pageOps = { delete: [], new: [] };
     var curPage = 0;
 
+    // ---- what the designer allowed -------------------------------------------
+    // The rules arrive with the menu (manifest.json in the project). The canvas honours them
+    // here, and the exporter enforces them again on the server: a stale tab cannot write over
+    // a locked line even if its UI never saw the lock.
+    var manifest = opts.manifest || {};
+    var allow = Object.assign({ addText: true, pageOps: true, restyle: true, deleteLines: true },
+                              manifest.allow || {});
+    var locked = new Set();
+    (function resolveLocks() {
+      var lock = manifest.lock || {};
+      var ids = {};
+      (lock.lines || []).forEach(function (v) { ids[parseInt(v, 10)] = 1; });
+      var needles = (lock.text || []).map(function (t) { return String(t).toLowerCase(); })
+        .filter(Boolean);
+      data.pages.forEach(function (p) {
+        p.objects.forEach(function (o) {
+          if (ids[o.gi]) locked.add(o.gi);
+          var low = String(o.text || '').toLowerCase();
+          if (needles.some(function (n) { return low.indexOf(n) >= 0; })) locked.add(o.gi);
+        });
+      });
+    })();
+    function isLocked(gi) { return locked.has(gi); }
+
+    function markLocks() {
+      lines.forEach(function (g, gi) {
+        if (!g) return;
+        if (isLocked(gi)) {
+          g.classList.add('locked');
+          var hit = g.querySelector('.hit');
+          if (hit) hit.setAttribute('title', 'locked by the designer');
+        } else {
+          g.classList.remove('locked');
+        }
+      });
+      var note = overlay.querySelector('[data-role=locknote]');
+      if (note) {
+        note.textContent = locked.size ? locked.size + ' line' + (locked.size === 1 ? '' : 's') + ' locked'
+          : '';
+        note.style.display = locked.size ? '' : 'none';
+      }
+      // controls the manifest withholds are not shown at all: a button that always refuses
+      // reads as a bug, not as a rule
+      var hide = [];
+      if (allow.pageOps === false) hide.push('pgprev', 'pgnext', 'pgdup', 'pgadd', 'pgdel');
+      if (allow.addText === false) hide.push('addtext');
+      hide.forEach(function (role) {
+        var b = overlay.querySelector('[data-role=' + role + ']');
+        if (b) b.style.display = 'none';
+      });
+      if (allow.restyle === false && styleRow) styleRow.setAttribute('data-restyle', 'off');
+    }
+    markLocks();
+
     data.pages.forEach(function (p) {
       p.src = p.index !== undefined ? p.index : p.src;   // which sheet of the source PDF
       p.art = p.src;                                     // which sheet's art a copy takes
@@ -328,6 +385,7 @@
       buildStages();
       views.forEach(bindView);
       attachMeasurer();
+      markLocks();
       renderAdds();
       applyScale();
       updatePageBar();
@@ -352,7 +410,16 @@
       return { width: ref ? ref.width : 595, height: ref ? ref.height : 842 };
     }
 
+    function pageGuard() {
+      if (allow.pageOps === false) {
+        status('this menu does not allow changing pages');
+        return false;
+      }
+      return true;
+    }
+
     function addBlankPage() {
+      if (!pageGuard()) return;
       var sz = pageSize();
       data.pages.push({ index: data.pages.length, width: sz.width, height: sz.height,
                         objects: [], vectors: [], images: [], plate: null,
@@ -366,6 +433,7 @@
     }
 
     function duplicatePage() {
+      if (!pageGuard()) return;
       var pno = curPage, src = data.pages[pno];
       if (!src) return;
       var idx = data.pages.length;
@@ -391,6 +459,7 @@
     }
 
     function deletePage() {
+      if (!pageGuard()) return;
       if (data.pages.length <= 1) {
         status('a document needs at least one page');
         return;
@@ -827,6 +896,10 @@
     }
     function addText(opts) {
       opts = opts || {};
+      if (allow.addText === false) {
+        status('this menu does not allow adding text');
+        return;
+      }
       var view = views[opts.page != null ? opts.page : 0];
       var a = {
         id: 'n' + (addSeq++),
@@ -876,6 +949,14 @@
     function deleteSelection() {
       if (selAdd) { removeAdd(selAdd.id); return; }
       if (selLine === null) { status('click a line first, then Delete'); return; }
+      if (isLocked(selLine)) {
+        status('that line is locked by the designer — it cannot be deleted');
+        return;
+      }
+      if (allow.deleteLines === false) {
+        status('this menu does not allow deleting lines');
+        return;
+      }
       pushUndo();
       if (deletes.has(selLine)) deletes.delete(selLine); else deletes.add(selLine);
       renderLine(selLine);
@@ -940,14 +1021,18 @@
     function showLineStyleRow(i) {
       var v = root.MenuLines.effective(objects, edits, i);
       var hex = /^#[0-9a-f]{6}$/i.test(String(v.color)) ? v.color : '#131a24';
+      var restyle = allow.restyle !== false;
       styleRow.innerHTML =
-        '<label>font</label><select data-role="lsfont">' + fontOptions(v.font) + '</select>' +
+        (restyle ? '<label>font</label><select data-role="lsfont">' + fontOptions(v.font) + '</select>' : '') +
         '<label>size</label><input type="number" data-role="lssize" min="4" max="120" step="0.5" value="' +
         (Math.round(v.size * 10) / 10) + '">' +
-        '<label>colour</label><input type="color" data-role="lscolor" value="' + hex + '">' +
-        '<span class="sp"></span><span class="hint">applies to this line only · Enter to keep</span>';
+        (restyle ? '<label>colour</label><input type="color" data-role="lscolor" value="' + hex + '">' : '') +
+        '<span class="sp"></span><span class="hint">' +
+        (restyle ? 'applies to this line only · Enter to keep'
+                 : 'the designer fixed the face and colour · size only') + '</span>';
       styleRow.classList.add('on');
-      styleRow.querySelector('[data-role=lsfont]').onchange = function (ev) {
+      var fsel = styleRow.querySelector('[data-role=lsfont]');
+      if (fsel) fsel.onchange = function (ev) {
         if (!editing) return;
         editing.font = ev.target.value;
         applyLive();
@@ -959,7 +1044,8 @@
         editing.size = n;
         applyLive();
       };
-      styleRow.querySelector('[data-role=lscolor]').oninput = function (ev) {
+      var csel = styleRow.querySelector('[data-role=lscolor]');
+      if (csel) csel.oninput = function (ev) {
         if (!editing) return;
         editing.color = ev.target.value;
         applyLive();
@@ -1035,6 +1121,10 @@
     function startEdit(g) {
       if (editing) commitEdit();
       var i = parseInt(g.dataset.i, 10);
+      if (isLocked(i)) {
+        status('that line is locked by the designer — ask them for a change');
+        return;
+      }
       var o = objects[i];
       var v = root.MenuLines.effective(objects, edits, i);
       var r = g.querySelector('.hit').getBoundingClientRect();
@@ -1169,6 +1259,11 @@
         g.classList.add('sel');
         var i = parseInt(g.dataset.i, 10);
         selLine = i;
+        if (isLocked(i)) {
+          // selectable, not movable: the designer's line stays where they put it
+          status('that line is locked by the designer');
+          return;
+        }
         var v = root.MenuLines.effective(objects, edits, i);
         drag = { kind: 'line', view: view, g: g, i: i, x: v.x, y: v.y,
                  sx: ev.clientX, sy: ev.clientY };
@@ -1540,6 +1635,7 @@
             data: j.lines,
             project: { slug: j.meta.slug, name: j.meta.name, fonts: j.fonts || [] },
             work: j.work,
+            manifest: j.manifest,
             onClose: opts.onClose
           });
         })

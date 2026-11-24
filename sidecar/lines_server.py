@@ -154,6 +154,9 @@ class Handler(BaseHTTPRequestHandler):
                     self._json(200, workspace.add_font(slug, payload.get("name") or "",
                                                        _b64(payload.get("data"))))
                     return
+                if len(parts) == 3 and parts[2] == "manifest":
+                    self._json(200, workspace.write_manifest(slug, self._payload()))
+                    return
                 if len(parts) == 3 and parts[2] == "export":
                     self._project_export(slug, self._payload())
                     return
@@ -205,6 +208,8 @@ class Handler(BaseHTTPRequestHandler):
             deletes=payload.get("deletes") or [],
             font_paths=font_paths,
             page_ops=payload.get("page_ops") or {},
+            manifest=(workspace.manifest(save_as) if save_as else
+                      (payload.get("manifest") or {})),
         )
         extra = {
             "X-Edits-Applied": str(info["applied"]),
