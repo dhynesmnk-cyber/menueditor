@@ -30,6 +30,27 @@ from grouping import _face, extract, resolve_font_path
 MIN_FIT = 0.92
 
 
+def _int(v):
+    try:
+        return int(v)
+    except (TypeError, ValueError):
+        return None
+
+
+def _parts(e):
+    """An edit or a delete, in either shape.
+
+    An older payload sent {"gi": n, ...}; the canvas sends [gi, patch] for an edit
+    and a bare gi for a delete. Reading only the dict shape made every save from the
+    canvas a no-op that still returned 200 with a plausible PDF.
+    """
+    if isinstance(e, dict):
+        return _int(e.get("gi")), e
+    if isinstance(e, (list, tuple)) and e:
+        return _int(e[0]), (e[1] if len(e) > 1 and isinstance(e[1], dict) else {})
+    return _int(e), {}
+
+
 def _image_bytes(data):
     """Decode a data: URL (or raw base64) into image bytes."""
     import base64
@@ -99,14 +120,19 @@ def build(doc_bytes, edits=None, images=None, adds=None, deletes=None, font_path
 
     # ---- existing lines -----------------------------------------------------
     for e in edits:
-        o = by_gi.get(int(e.get("gi", -1)))
-        if o is None:
+        gi, patch = _parts(e)
+        if gi is None:
+            refused.append({"payload": "unreadable edit", "value": repr(e)[:60]})
             continue
-        text = e.get("text", o["text"])
-        x = float(e.get("x", o["x"]))
-        y = float(e.get("y", o["y"]))
-        size = float(e.get("size", o["size"]))
-        track = float(e.get("track", o["track_em"] if o["letter_spaced"] else 0.0))
+        o = by_gi.get(gi)
+        if o is None:
+            refused.append({"gi": gi, "reason": "no such line"})
+            continue
+        text = patch.get("text", o["text"])
+        x = float(patch.get("x", o["x"]))
+        y = float(patch.get("y", o["y"]))
+        size = float(patch.get("size", o["size"]))
+        track = float(patch.get("track", o["track_em"] if o["letter_spaced"] else 0.0))
         moved = abs(x - o["x"]) > 0.05 or abs(y - o["y"]) > 0.05
         retracked = abs(track - (o["track_em"] if o["letter_spaced"] else 0.0)) > 0.002
         resized = abs(size - o["size"]) > 0.01
@@ -133,12 +159,13 @@ def build(doc_bytes, edits=None, images=None, adds=None, deletes=None, font_path
 
     # ---- deleted lines: the ink goes, nothing is drawn back ------------------
     for d in deletes:
-        try:
-            gi = int(d.get("gi"))
-        except (TypeError, ValueError, AttributeError):
+        gi = _parts(d)[0]
+        if gi is None:
+            refused.append({"payload": "unreadable delete", "value": repr(d)[:60]})
             continue
         o = by_gi.get(gi)
         if o is None:
+            refused.append({"gi": gi, "reason": "no such line"})
             continue
         cuts.append((o["page"], _box(o, pad=0.9)))
         removed.append(o)

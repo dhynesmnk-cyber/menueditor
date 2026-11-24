@@ -42,18 +42,42 @@ def main():
     print("project:", slug)
 
     d = os.path.join(PROJECTS, slug)
-    exports = sorted(glob.glob(os.path.join(d, "exports", "*.pdf")))
-    if not exports:
-        print("no exports in", d)
+    orig_path = os.path.join(d, "original.pdf")
+    if not os.path.exists(orig_path):
+        print("no original.pdf in", d)
         return 2
-    newest = exports[-1]
-    print("export:", os.path.basename(newest))
 
-    orig = pymupdf.open(os.path.join(d, "original.pdf"))
-    out = pymupdf.open(newest)
-    work = get("/projects/" + slug)["work"]
-    lines = get("/projects/" + slug)["lines"]
+    proj = get("/projects/" + slug)
+    work, lines = proj["work"], proj["lines"]
+
+    # Export from the project's CURRENT edits on every run. Verifying the newest
+    # file already in exports/ checks whatever happened to be exported last — which
+    # is how a stale sheet carrying two extra test boxes passed as "the export".
+    body = json.dumps({"edits": work.get("edits", []) or [],
+                       "adds": work.get("adds", []) or [],
+                       "deletes": work.get("deletes", []) or []}).encode()
+    req = urllib.request.Request(BASE + "/projects/" + slug + "/export", data=body,
+                                 headers={"Content-Type": "application/json"})
+    with urllib.request.urlopen(req, timeout=300) as r:
+        pdf_bytes = r.read()
+        heads = {k.lower(): v for k, v in r.headers.items()}
+    tmp = os.path.join(ROOT, "out", "project-export-check.pdf")
+    os.makedirs(os.path.dirname(tmp), exist_ok=True)
+    with open(tmp, "wb") as fh:
+        fh.write(pdf_bytes)
+    print("export: fresh from the sidecar (%d KB)" % (len(pdf_bytes) // 1024))
+
+    orig = pymupdf.open(orig_path)
+    out = pymupdf.open(tmp)
     by_gi = {o["gi"]: o for p in lines["pages"] for o in p["objects"]}
+
+    print("\n== the sidecar applied what it was sent ==")
+    n_adds = len(work.get("adds", []) or [])
+    n_dels = len(work.get("deletes", []) or [])
+    ok(int(heads.get("x-adds-applied", -1)) == n_adds, "every add applied",
+       "%s of %d" % (heads.get("x-adds-applied"), n_adds))
+    ok(int(heads.get("x-deletes-applied", -1)) == n_dels, "every delete applied",
+       "%s of %d" % (heads.get("x-deletes-applied"), n_dels))
 
     print("\n== the client's changes ==")
     ok(out.page_count == orig.page_count, "page count unchanged",
