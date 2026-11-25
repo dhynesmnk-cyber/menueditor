@@ -5,7 +5,7 @@
   "description": "Menu editor \u2014 text importer plus a screen and print renderer driven by one display list",
   "license": "MIT",
   "scripts": {
-    "start": "python3 -m http.server 8791",
+    "start": "python3 -m http.server 8791 --bind 127.0.0.1",
     "serve:lan": "python3 -m http.server 8791 --bind 0.0.0.0",
     "ocr": ".ocr/bin/python ocr/server.py",
     "canvas": ".lines/bin/python sidecar/lines_server.py",
