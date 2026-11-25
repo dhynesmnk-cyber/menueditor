@@ -228,6 +228,12 @@ A finger never drags a line directly — that gesture is scroll, and the browser
 the pointer mid-move. It scrolls; a tap selects; the grip moves. `pointercancel` throws
 the in-flight move away instead of half-committing it.
 
+The page opens on **your menus**, not on the studio: a list of projects, each with the name
+you gave it and a `⋯` menu to rename or delete it. Rename only touches the label; delete removes
+the project's folder (the original PDF, the work and the exports together), and it arms on the
+first tap and acts on the second. `New from file…` adds another menu. Closing the list leaves you
+in the studio, which is where a menu is designed from scratch.
+
 Serving it to a phone that is not this machine:
 
     LINES_HOST=0.0.0.0 npm run canvas     # sidecar answers on the network
@@ -247,6 +253,12 @@ When the phone is not on the same network there is one host to reach, not two:
     npm run serve:proxy                   # :8795 = files + /projects,/splice,/health,/reimport
     ngrok http 8795                       # one tunnel, one origin
     https://<that-host>/index.html?svc=same
+
+Exports are set in the face the PDF itself names. A family found on this machine or in `fonts/`
+is used from that file; a base-14 name (Helvetica, Times, Courier, Symbol, ZapfDingbats) is drawn
+by name, which is the same face and needs no file. Any other face that is not installed is a
+**refusal** — `font not installed: <face>` — never a substitute, because the words would be right
+and the typeface wrong.
 
 `?svc=same` tells the page the sidecar is its own origin, which is how a single tunnel can
 carry both; `?svc=https://elsewhere:8793` points it somewhere else instead, and the default
