@@ -107,7 +107,68 @@
       '.cv-panel .row b{font:600 13px/1.3 system-ui,sans-serif;color:#131a24}',
       '.cv-panel .row span{font:11px/1.3 ui-monospace,monospace;color:#667485}',
       '.cv-panel .foot{display:flex;gap:8px;justify-content:flex-end;padding:12px 16px;border-top:1px solid #dbe2ec}',
-      '.cv-panel .empty{padding:16px;color:#667485;font:12px/1.5 system-ui,sans-serif}'
+      '.cv-panel .empty{padding:16px;color:#667485;font:12px/1.5 system-ui,sans-serif}',
+      // ---- touch and narrow screens -------------------------------------
+      // A thumb needs 44px and no hover. The bar keeps name, status, undo, More,
+      // Export and Close; everything else moves into a sheet that slides up from the
+      // bottom, where a thumb already is.
+      '.cv-menu{display:contents}',
+      '.cv-more{display:none;white-space:nowrap}',
+      '.cv-btn{touch-action:manipulation;-webkit-tap-highlight-color:transparent}',
+      '.cv-stage svg{touch-action:pan-x pan-y}',
+      '.cv-line rect.hit,.cv-add rect.hit{touch-action:none}',
+      '.cv-grip{display:none;cursor:grab;touch-action:none}',
+      '.cv-grip rect{fill:#2f6fed;stroke:#fff;stroke-width:.6}',
+      '.cv-grip path{stroke:#fff;stroke-width:.8;stroke-linecap:round}',
+      '@media (max-width:720px){',
+      '  .cv-bar{flex-wrap:nowrap;gap:6px;padding:max(6px,env(safe-area-inset-top)) 10px 6px}',
+      '  .cv-bar [data-role=pname]{display:none}',
+      '  .cv-bar [data-role=status]{flex:1 1 auto;min-width:0;font-size:12px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}',
+      '  .cv-bar [data-role=export]{white-space:nowrap;padding:0 12px}',
+      '  .pdfw{display:none}',
+      '  .cv-bar .hint{display:none}',
+      '  .cv-btn{min-height:44px;min-width:44px;padding:0 12px;font-size:15px}',
+      '  .cv-more{display:inline-flex;align-items:center}',
+      '  .cv-menu{position:fixed;left:0;right:0;bottom:0;z-index:96;display:none;flex-wrap:wrap;gap:8px;',
+      '    padding:14px 12px max(14px,env(safe-area-inset-bottom));background:#fff;',
+      '    border-top:1px solid #dbe2ec;box-shadow:0 -12px 34px rgba(16,32,64,.18)}',
+      '  .cv-menu.on{display:flex}',
+      '  .cv-menu .cv-btn{flex:1 1 44%;justify-content:center;min-height:48px;font-size:15px;white-space:nowrap;overflow:hidden}',
+      '  .cv-menu .cv-pgctl,.cv-menu .cv-zoom{display:flex;flex:1 1 100%;flex-wrap:wrap;gap:8px;padding:0;border:0}',
+      '  .cv-menu .cv-pgctl .cv-btn{flex:1 1 30%;min-width:0;min-height:48px}',
+      '  .cv-menu .cv-zoom .cv-btn{flex:1 1 0;min-width:0;min-height:48px}',
+      '  .cv-style{padding:10px 12px;gap:10px;position:sticky;top:0;z-index:2}',
+      '  .cv-style label{font-size:13px}',
+      '  .cv-style select,.cv-style input[type=number]{min-height:42px;font-size:16px}',
+      '  .cv-style input[type=color]{width:44px;height:42px}',
+      '  .cv-pages{padding:8px 8px 90px}',
+      '  .cv-trk{bottom:auto;position:fixed;left:0;right:0;bottom:0;padding-bottom:max(10px,env(safe-area-inset-bottom));gap:8px}',
+      '  .cv-trk input[type=range]{flex:1;width:auto;min-height:36px}',
+      '  .cv-panel .box{width:100vw;height:100%;max-height:none;border-radius:0}',
+      '  .cv-panel .row{padding:14px 12px}',
+      '  .cv-panel .row b{font-size:15px}',
+      '  .cv-panel .row span{font-size:12px}',
+      '}',
+      '.cv-drawer{display:none;position:fixed;left:0;right:0;bottom:0;z-index:97;background:#fff;',
+      '  border-top:1px solid #dbe2ec;box-shadow:0 -14px 40px rgba(16,32,64,.22);',
+      '  padding:12px 12px max(12px,env(safe-area-inset-bottom));font:14px/1.35 system-ui,sans-serif}',
+      '.cv-drawer .dr-head{display:flex;align-items:center;gap:8px;margin-bottom:8px}',
+      '.cv-drawer .dr-head b{flex:1;font-weight:600;font-size:14px}',
+      '.cv-drawer .dr-x{background:none;border:0;font-size:20px;line-height:1;padding:6px 10px;cursor:pointer;min-width:44px;min-height:44px}',
+      '.cv-drawer input.dr-text{width:100%;font-size:16px;padding:11px 12px;border:1px solid #c9d2e0;border-radius:8px}',
+      '.cv-drawer .dr-row{display:flex;gap:8px;align-items:center;margin-top:8px;flex-wrap:wrap}',
+      '.cv-drawer .dr-row label{color:#667485;font-size:13px}',
+      '.cv-drawer .dr-row select,.cv-drawer .dr-row input[type=number]{font-size:16px;min-height:42px;padding:6px 8px;',
+      '  border:1px solid #c9d2e0;border-radius:8px;background:#fff}',
+      '.cv-drawer .dr-row input[type=number]{width:78px}',
+      '.cv-drawer .dr-row input[type=color]{width:52px;height:42px;padding:0;border:1px solid #c9d2e0;border-radius:8px;background:none}',
+      '.cv-drawer .dr-actions{display:flex;gap:8px;margin-top:12px}',
+      '.cv-drawer .dr-actions button{flex:1;min-height:48px;font-size:16px;border-radius:10px;border:1px solid #c9d2e0;background:#fff;cursor:pointer}',
+      '.cv-drawer .dr-actions .dr-done{background:#2f6fed;border-color:#2f6fed;color:#fff;font-weight:600}',
+      '.cv-drawer .dr-note{color:#667485;font-size:13px;margin-top:8px}',
+      // the override has to come after the base rule: same specificity, later wins
+      '@media (max-width:720px){.cv-drawer{display:block}}',
+      '@media (hover:none){.cv-img{opacity:1;outline:1px dashed rgba(47,111,237,.55);outline-offset:-1px}}'
     ].join('\n');
     var el = document.createElement('style');
     el.id = 'cv-styles';
@@ -137,26 +198,31 @@
       '  <span class="cv-status" data-role="status">no edits</span>' +
       '  <span class="cv-status" data-role="locknote" style="display:none"></span>' +
       '  <span class="sp"></span>' +
-      '  <button class="cv-btn" data-role="addtext" title="add a text box (T)">＋ Text</button>' +
-      '  <button class="cv-btn" data-role="delete" title="delete the selected line (Del)">Delete</button>' +
-      '  <button class="cv-btn" data-role="fonts" title="load a font file into this project">Fonts</button>' +
-      '  <button class="cv-btn" data-role="reimport" title="replace the source PDF with a revised one; your changes are carried over">↻ New PDF</button>' +
-      '  <span class="cv-pgctl">' +
-      '    <button class="cv-btn" data-role="pgprev" title="show the previous page">‹</button>' +
-      '    <button class="cv-btn" data-role="pglabel" title="the page these buttons act on">1 / 1</button>' +
-      '    <button class="cv-btn" data-role="pgnext" title="show the next page">›</button>' +
-      '    <button class="cv-btn" data-role="pgdup" title="copy this sheet: its art stays, its lines become editable">Duplicate</button>' +
-      '    <button class="cv-btn" data-role="pgadd" title="add a blank page">+ Page</button>' +
-      '    <button class="cv-btn" data-role="pgdel" title="delete this page">Delete page</button>' +
-      '  </span>' +
-      '  <span class="cv-zoom">' +
-      '    <button class="cv-btn" data-role="zout" title="zoom out">−</button>' +
-      '    <button class="cv-btn" data-role="zlabel" title="fit width → fit page → 100%">100%</button>' +
-      '    <button class="cv-btn" data-role="zin" title="zoom in">+</button>' +
-      '  </span>' +
-      '  <button class="cv-btn" data-role="projects">Projects</button>' +
-      '  <button class="cv-btn" data-role="clear">Clear</button>' +
-      '  <button class="cv-btn primary" data-role="export">Export PDF</button>' +
+      '  <button class="cv-btn" data-role="undo" title="undo (⌘Z)">↶</button>' +
+      '  <button class="cv-btn" data-role="redo" title="redo (⇧⌘Z)">↷</button>' +
+      '  <div class="cv-menu" data-role="menu">' +
+      '    <button class="cv-btn" data-role="addtext" title="add a text box (T)">＋ Text</button>' +
+      '    <button class="cv-btn" data-role="delete" title="delete the selected line (Del)">Delete</button>' +
+      '    <button class="cv-btn" data-role="fonts" title="load a font file into this project">Fonts</button>' +
+      '    <button class="cv-btn" data-role="reimport" title="replace the source PDF with a revised one; your changes are carried over">↻ New PDF</button>' +
+      '    <span class="cv-pgctl">' +
+      '      <button class="cv-btn" data-role="pgprev" title="show the previous page">‹</button>' +
+      '      <button class="cv-btn" data-role="pglabel" title="the page these buttons act on">1 / 1</button>' +
+      '      <button class="cv-btn" data-role="pgnext" title="show the next page">›</button>' +
+      '      <button class="cv-btn" data-role="pgdup" title="copy this sheet: its art stays, its lines become editable">Duplicate</button>' +
+      '      <button class="cv-btn" data-role="pgadd" title="add a blank page">+ Page</button>' +
+      '      <button class="cv-btn" data-role="pgdel" title="delete this page">Delete page</button>' +
+      '    </span>' +
+      '    <span class="cv-zoom">' +
+      '      <button class="cv-btn" data-role="zout" title="zoom out">−</button>' +
+      '      <button class="cv-btn" data-role="zlabel" title="fit width → fit page → 100%">100%</button>' +
+      '      <button class="cv-btn" data-role="zin" title="zoom in">+</button>' +
+      '    </span>' +
+      '    <button class="cv-btn" data-role="projects">Projects</button>' +
+      '    <button class="cv-btn" data-role="clear">Clear</button>' +
+      '  </div>' +
+      '  <button class="cv-btn cv-more" data-role="more" aria-expanded="false">More ▾</button>' +
+      '  <button class="cv-btn primary" data-role="export">Export <span class="pdfw">PDF</span></button>' +
       '  <button class="cv-btn" data-role="close">Close</button>' +
       '</div>' +
       '<div class="cv-style" data-role="style"></div>' +
@@ -287,6 +353,12 @@
       });
       // added text boxes live above the page's own ink
       svg.push('<g class="cv-adds"></g>');
+      // the move grip: constant size on screen, shown for whatever the client selected.
+      // A thumb drags this instead of the line, so a page scroll never becomes a move.
+      svg.push('<g class="cv-grip" data-role="grip" style="display:none">' +
+               '<circle cx="9" cy="9" r="22" fill="transparent"/>' +
+               '<rect x="0" y="0" width="18" height="18" rx="5"/>' +
+               '<path d="M5.5 6.5h7M5.5 9h7M5.5 11.5h7" fill="none"/></g>');
       svg.push('</svg>');
       stage.insertAdjacentHTML('beforeend', svg.join(''));
       pagesEl.appendChild(stage);
@@ -305,6 +377,7 @@
         addsLayer: svgEl.querySelector('.cv-adds'),
         guideX: svgEl.querySelector('[data-role=gx]'),
         guideY: svgEl.querySelector('[data-role=gy]'),
+        grip: svgEl.querySelector('[data-role=grip]'),
         guides: root.MenuLines.guides(p.objects)
       });
       });
@@ -543,6 +616,31 @@
     overlay.querySelector('[data-role=zout]').addEventListener('click', function () {
       setZoom(Math.max(0.2, computeScale() / 1.2));
     });
+
+    // ---- the bar: a sheet on a phone, one inline row on a desktop -----------
+    var menuEl = overlay.querySelector('[data-role=menu]');
+    var moreBtn = overlay.querySelector('[data-role=more]');
+    function closeMenu() {
+      if (!menuEl.classList.contains('on')) return;
+      menuEl.classList.remove('on');
+      moreBtn.setAttribute('aria-expanded', 'false');
+      moreBtn.textContent = 'More ▾';
+    }
+    moreBtn.addEventListener('click', function () {
+      var on = menuEl.classList.toggle('on');
+      moreBtn.setAttribute('aria-expanded', on ? 'true' : 'false');
+      moreBtn.textContent = on ? 'Close ✕' : 'More ▾';
+      hideGrip();
+    });
+    // zoom and page-stepping stay open: they are usually pressed more than once
+    menuEl.addEventListener('click', function (ev) {
+      var b = ev.target.closest('button');
+      if (!b) return;
+      if (!/^(zin|zout|zlabel|pgprev|pgnext)$/.test(b.dataset.role || '')) closeMenu();
+    });
+    overlay.querySelector('[data-role=undo]').addEventListener('click', function () { hideGrip(); undo(); });
+    overlay.querySelector('[data-role=redo]').addEventListener('click', function () { hideGrip(); redo(); });
+    api.closeMenu = closeMenu;
     overlay.querySelector('[data-role=zlabel]').addEventListener('click', function () {
       setZoom(zoomMode === 'fitw' ? 'fitp' : (zoomMode === 'fitp' ? '1' : 'fitw'));
     });
@@ -592,7 +690,10 @@
     var deletes = new Set();        // gi of lines the client removed
     var addSeq = 0;
     var undoStack = [];
+    var redoStack = [];
     var drag = null, wasDrag = false, editing = null, selAdd = null;
+    var pointers = new Map();   // live pointers: two of them mean a pinch
+    var pinch = null;           // {dist, z} at the moment the second finger landed
     var saveTimer = null, saving = false;
 
     function status(msg) { statusEl.textContent = msg; }
@@ -751,13 +852,25 @@
     function pushUndo() {
       undoStack.push(snapshot());
       if (undoStack.length > 60) undoStack.shift();
+      redoStack.length = 0;
     }
     function undo() {
       if (!undoStack.length) { status('nothing to undo'); return; }
+      redoStack.push(snapshot());
+      if (redoStack.length > 60) redoStack.shift();
       applySnapshot(undoStack.pop());
       persist();
       countStatus();
       status(statusEl.textContent + ' (undo)');
+    }
+    // Redo is the same walk the other way. A phone has no ⌘Z, so both live on the bar.
+    function redo() {
+      if (!redoStack.length) { status('nothing to redo'); return; }
+      undoStack.push(snapshot());
+      applySnapshot(redoStack.pop());
+      persist();
+      countStatus();
+      status(statusEl.textContent + ' (redo)');
     }
     function setLive(g, text, size, track, font, color) {
       var t = g.querySelector('.live');
@@ -1061,6 +1174,7 @@
       if (editing) commitEdit();
       var a = findAdd(g.dataset.id);
       if (!a) return;
+      if (mobileUI()) { startDrawerAdd(g, a); return; }
       var r = g.querySelector('.hit').getBoundingClientRect();
       var inp = document.createElement('input');
       inp.className = 'cv-input';
@@ -1121,6 +1235,114 @@
       countStatus();
     }
 
+    // ---- the drawer: editing that fits a thumb ------------------------------
+    // On a phone the in-place field is 8px tall at fit-width zoom, which makes iOS zoom
+    // the whole page, and the keyboard covers the line it is editing. A bottom drawer is
+    // always ≥16px, never hidden, and puts Done where the thumb already is. It drives the
+    // same `editing` state, so the fit rule and the commit path are the desktop ones.
+    function mobileUI() {
+      return !!((window.matchMedia && window.matchMedia('(hover: none) and (pointer: coarse)').matches) ||
+                overlay.clientWidth <= 720);
+    }
+
+    function drawerShell(title, body) {
+      var d = document.createElement('div');
+      d.className = 'cv-drawer';
+      d.setAttribute('data-role', 'drawer');
+      d.innerHTML = '<div class="dr-head"><b>' + esc(title) + '</b>' +
+        '<button class="dr-x" type="button" aria-label="close">×</button></div>' + body;
+      overlay.appendChild(d);
+      d.querySelector('.dr-x').onclick = function () { cancelEdit(); };
+      return d;
+    }
+
+    function styleControls(v, restyle) {
+      var hex = /^#[0-9a-f]{6}$/i.test(String(v.color)) ? v.color : '#131a24';
+      return '<div class="dr-row">' +
+        (restyle ? '<label>font</label><select class="dr-font">' + fontOptions(v.font) + '</select>' : '') +
+        '<label>size</label><input class="dr-size" type="number" min="4" max="120" step="0.5" value="' +
+        (Math.round(v.size * 10) / 10) + '">' +
+        (restyle ? '<input class="dr-color" type="color" value="' + hex + '">' : '') +
+        '</div>' + (restyle ? '' :
+        '<div class="dr-note">the designer fixed the face and colour — size only</div>');
+    }
+
+    function startDrawerLine(i) {
+      if (editing) commitEdit();
+      var v = root.MenuLines.effective(objects, edits, i);
+      var restyle = allow.restyle !== false;
+      var d = drawerShell('Edit line',
+        '<input class="dr-text" value="' + esc(v.text) + '" autocapitalize="sentences" ' +
+        'autocorrect="off" spellcheck="false">' +
+        styleControls(v, restyle) +
+        '<div class="dr-actions"><button class="dr-cancel" type="button">Cancel</button>' +
+        '<button class="dr-done" type="button">Done</button></div>');
+      var inp = d.querySelector('.dr-text');
+      var g = lines.get(i);
+      if (g) g.classList.add('sel');
+      editing = { kind: 'line', g: g, i: i, inp: inp, size: v.size, track: v.track,
+                  font: v.font, color: v.color, floor: root.MenuLines.MIN_FIT,
+                  fits: true, drawer: d };
+      inp.addEventListener('input', applyLive);
+      inp.addEventListener('keydown', function (ev) {
+        if (ev.key === 'Enter') { ev.preventDefault(); commitEdit(); }
+        else if (ev.key === 'Escape') { ev.preventDefault(); cancelEdit(); }
+      });
+      var fsel = d.querySelector('.dr-font');
+      if (fsel) fsel.onchange = function (ev) { editing.font = ev.target.value; applyLive(); };
+      d.querySelector('.dr-size').oninput = function (ev) {
+        var n = parseFloat(ev.target.value);
+        if (!n || n < 4) return;
+        editing.size = n;
+        applyLive();
+      };
+      var csel = d.querySelector('.dr-color');
+      if (csel) csel.oninput = function (ev) { editing.color = ev.target.value; applyLive(); };
+      d.querySelector('.dr-done').onclick = function () { commitEdit(); };
+      d.querySelector('.dr-cancel').onclick = function () { cancelEdit(); };
+      inp.focus();
+      inp.setSelectionRange(inp.value.length, inp.value.length);
+      applyLive();
+    }
+
+    function startDrawerAdd(g, a) {
+      if (editing) commitEdit();
+      var restyle = allow.restyle !== false;
+      var d = drawerShell('Edit text box',
+        '<input class="dr-text" value="' + esc(a.text) + '" autocorrect="off" spellcheck="false">' +
+        styleControls(a, restyle) +
+        '<div class="dr-actions"><button class="dr-cancel" type="button">Cancel</button>' +
+        '<button class="dr-done" type="button">Done</button></div>');
+      var inp = d.querySelector('.dr-text');
+      editing = { kind: 'add', g: g, add: a, inp: inp, orig: a.text, drawer: d };
+      var paint = function () {
+        a.text = inp.value;
+        var t = g.querySelector('text');
+        t.textContent = inp.value;
+        var rect = g.querySelector('rect');
+        rect.setAttribute('width', Math.max(6, addWidth(a) + 2).toFixed(2));
+      };
+      inp.addEventListener('input', paint);
+      inp.addEventListener('keydown', function (ev) {
+        if (ev.key === 'Enter') { ev.preventDefault(); commitEdit(); }
+        else if (ev.key === 'Escape') { ev.preventDefault(); cancelEdit(); }
+      });
+      d.querySelector('.dr-size').oninput = function (ev) {
+        var n = parseFloat(ev.target.value);
+        if (!n || n < 4) return;
+        a.size = n;
+        renderAdd(a);
+      };
+      var fsel = d.querySelector('.dr-font');
+      if (fsel) fsel.onchange = function (ev) { a.font = ev.target.value; renderAdd(a); };
+      var csel = d.querySelector('.dr-color');
+      if (csel) csel.oninput = function (ev) { a.color = ev.target.value; renderAdd(a); };
+      d.querySelector('.dr-done').onclick = function () { commitEdit(); };
+      d.querySelector('.dr-cancel').onclick = function () { cancelEdit(); };
+      inp.focus();
+      inp.setSelectionRange(inp.value.length, inp.value.length);
+    }
+
     // ---- editing ----
     function startEdit(g) {
       if (editing) commitEdit();
@@ -1131,6 +1353,7 @@
       }
       var o = objects[i];
       var v = root.MenuLines.effective(objects, edits, i);
+      if (mobileUI()) { startDrawerLine(i); return; }
       var r = g.querySelector('.hit').getBoundingClientRect();
       var inp = document.createElement('input');
       inp.className = 'cv-input';
@@ -1197,6 +1420,8 @@
       var e = editing;
       editing = null;
       e.inp.remove();
+      if (e.drawer) e.drawer.remove();
+      hideGrip();
       trkEl.classList.remove('on');
       styleRow.classList.remove('on');
       if (e.g) e.g.classList.remove('sel');       // a leftover outline reads as a bug
@@ -1220,6 +1445,7 @@
         var ea = editing;
         editing = null;
         ea.inp.remove();
+        if (ea.drawer) ea.drawer.remove();
         ea.add.text = ea.orig;
         renderAdd(ea.add);
         selectAdd(ea.add);
@@ -1228,6 +1454,7 @@
       var e = editing;
       editing = null;
       e.inp.remove();
+      if (e.drawer) e.drawer.remove();
       trkEl.classList.remove('on');
       styleRow.classList.remove('on');
       if (e.g) e.g.classList.remove('sel');
@@ -1235,6 +1462,34 @@
     }
 
     // ---- drag, per page ----  (lines and added boxes share one gesture path)
+    // A mouse drags a line directly. A finger does not: on a touch screen the same gesture
+    // is how the page scrolls, and the browser cancels the pointer the moment it decides to
+    // scroll — which used to leave a half-finished move behind. So a tap selects, and the
+    // move happens from the grip that appears above the selected thing.
+    var gripTarget = null;        // {kind:'line'|'add', ref, el}
+
+    function pinchState() {
+      var pts = Array.from(pointers.values());
+      if (pts.length < 2) return null;
+      return { dist: Math.hypot(pts[0].x - pts[1].x, pts[0].y - pts[1].y), z: computeScale() };
+    }
+
+    function showGrip(view, kind, ref, v, el) {
+      if (!view.grip) return;
+      gripTarget = { kind: kind, ref: ref, el: el };
+      var zs = Z * (view.scale || 1);
+      var x = (kind === 'add' ? ref.x : v.x) - 3 / zs;
+      var y = (kind === 'add' ? ref.y - ref.size : v.y - v.size) - 24 / zs;
+      view.grip.setAttribute('transform',
+        'translate(' + x.toFixed(2) + ' ' + y.toFixed(2) + ') scale(' + (1 / zs).toFixed(4) + ')');
+      view.grip.style.display = 'inline';   // '' would fall back to the CSS none
+    }
+    function hideGrip() {
+      views.forEach(function (v) { if (v.grip) v.grip.style.display = 'none'; });
+      gripTarget = null;
+    }
+    api.hideGrip = hideGrip;
+
     function bindView(view) {
       var svgEl = view.svg;
 
@@ -1245,12 +1500,43 @@
       }
 
       svgEl.addEventListener('pointerdown', function (ev) {
+        // pinch: two fingers on the page zoom, they never move a line
+        pointers.set(ev.pointerId, { x: ev.clientX, y: ev.clientY });
+        if (pointers.size === 2) {
+          drag = null;
+          wasDrag = false;
+          pinch = pinchState();
+          return;
+        }
+        var touch = ev.pointerType === 'touch' || ev.pointerType === 'pen';
+        var gripEl = ev.target.closest('.cv-grip');
+        if (gripEl && gripTarget) {
+          // moving the selected thing, from a target that is 44px on screen
+          if (ev.cancelable) ev.preventDefault();
+          try { svgEl.setPointerCapture(ev.pointerId); } catch (e) {}
+          if (gripTarget.kind === 'add') {
+            var ga = gripTarget.ref;
+            drag = { kind: 'add', view: view, g: gripTarget.el, add: ga, x: ga.x, y: ga.y,
+                     sx: ev.clientX, sy: ev.clientY };
+          } else {
+            var gi = gripTarget.ref;
+            var gv = root.MenuLines.effective(objects, edits, gi);
+            drag = { kind: 'line', view: view, g: lines.get(gi), i: gi, x: gv.x, y: gv.y,
+                     sx: ev.clientX, sy: ev.clientY };
+          }
+          wasDrag = false;
+          return;
+        }
         var addG = ev.target.closest('.cv-add');
         if (addG) {
           var a = findAdd(addG.dataset.id);
           if (!a) return;
           clearSel();
           selectAdd(a);
+          if (touch) {
+            showGrip(view, 'add', a, a, addG);
+            return;
+          }
           drag = { kind: 'add', view: view, g: addG, add: a, x: a.x, y: a.y,
                    sx: ev.clientX, sy: ev.clientY };
           wasDrag = false;
@@ -1265,16 +1551,32 @@
         selLine = i;
         if (isLocked(i)) {
           // selectable, not movable: the designer's line stays where they put it
+          hideGrip();
           status('that line is locked by the designer');
           return;
         }
         var v = root.MenuLines.effective(objects, edits, i);
+        if (touch) {
+          showGrip(view, 'line', i, v, g);
+          wasDrag = false;
+          return;
+        }
+        hideGrip();
         drag = { kind: 'line', view: view, g: g, i: i, x: v.x, y: v.y,
                  sx: ev.clientX, sy: ev.clientY };
         wasDrag = false;
       });
 
       svgEl.addEventListener('pointermove', function (ev) {
+        if (pointers.has(ev.pointerId)) pointers.set(ev.pointerId, { x: ev.clientX, y: ev.clientY });
+        if (pinch && pointers.size >= 2) {
+          var pts = Array.from(pointers.values());
+          var dist = Math.hypot(pts[0].x - pts[1].x, pts[0].y - pts[1].y);
+          if (pinch.dist > 8 && dist > 8) {
+            setZoom(Math.max(0.2, Math.min(4, pinch.z * dist / pinch.dist)));
+          }
+          return;
+        }
         if (!drag || drag.view !== view) return;
         var z = Z * (view.scale || 1);
         var dx = ev.clientX - drag.sx, dy = ev.clientY - drag.sy;
@@ -1301,7 +1603,9 @@
         drag.ny = ny;
       });
 
-      svgEl.addEventListener('pointerup', function () {
+      svgEl.addEventListener('pointerup', function (ev) {
+        pointers.delete(ev.pointerId);
+        if (pointers.size < 2) pinch = null;
         if (!drag || drag.view !== view) return;
         view.guideX.style.display = 'none';
         view.guideY.style.display = 'none';
@@ -1337,6 +1641,20 @@
         } else {
           setEdit(d.i, { x: d.nx, y: d.ny });
         }
+      });
+
+      // the browser took the gesture (a scroll, a system swipe): abandon the move, never
+      // half-commit it
+      svgEl.addEventListener('pointercancel', function (ev) {
+        pointers.delete(ev.pointerId);
+        if (pointers.size < 2) pinch = null;
+        if (!drag || drag.view !== view) return;
+        view.guideX.style.display = 'none';
+        view.guideY.style.display = 'none';
+        if (drag.g) drag.g.removeAttribute('transform');
+        drag = null;
+        wasDrag = false;
+        status('move cancelled');
       });
 
       svgEl.addEventListener('click', function (ev) {
@@ -1408,6 +1726,7 @@
       applyLive();
     });
     overlay.querySelector('[data-role=clear]').addEventListener('click', function () {
+      hideGrip();
       if (!edits.size && !imageEdits.size && !adds.length && !deletes.size) {
         status('nothing to clear'); return;
       }
@@ -1542,6 +1861,7 @@
 
     // ---- project switcher ---------------------------------------------------
     overlay.querySelector('[data-role=projects]').addEventListener('click', function () {
+      hideGrip();
       openWorkspace({ onClose: opts.onClose });
     });
 
@@ -1552,8 +1872,13 @@
       var inField = tag === 'INPUT' || tag === 'SELECT' || tag === 'TEXTAREA';
       if ((ev.ctrlKey || ev.metaKey) && ev.key.toLowerCase() === 'z' && !editing) {
         ev.preventDefault();
-        undo();
+        if (ev.shiftKey) redo(); else undo();
         return;
+      }
+      if (ev.key === 'Escape') {
+        if (editing) { ev.preventDefault(); cancelEdit(); return; }
+        if (menuEl.classList.contains('on')) { ev.preventDefault(); closeMenu(); return; }
+        hideGrip();
       }
       if (!editing && !inField && (ev.key === 'Delete' || ev.key === 'Backspace')) {
         ev.preventDefault();
@@ -1576,7 +1901,13 @@
           !pageOps.new.length && !pageOps.delete.length) {
         status('no changes to export'); return;
       }
+      // a 217-line duplicate takes ~40 s; a spinner-less "exporting…" looks like a hang
+      var t0 = Date.now();
       status('exporting…');
+      var tick = setInterval(function () {
+        status('exporting… ' + Math.round((Date.now() - t0) / 1000) + 's — still working');
+      }, 1000);
+      function done(msg) { clearInterval(tick); status(msg); }
       var images = [];
       imageEdits.forEach(function (url, slot) {
         var parts = slot.split(':');
@@ -1601,7 +1932,7 @@
       var res = await fetch(url, {
         method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body)
       });
-      if (!res.ok) { status('export failed: ' + (await res.text()).slice(0, 120)); return; }
+      if (!res.ok) { done('export failed: ' + (await res.text()).slice(0, 120)); return; }
       var refused = res.headers.get('X-Edits-Refused');
       var applied = res.headers.get('X-Edits-Applied');
       var placed = res.headers.get('X-Images-Placed');
@@ -1609,12 +1940,20 @@
       var deletedN = res.headers.get('X-Deletes-Applied');
       var savedName = res.headers.get('X-Export-Name');
       var blob = await res.blob();
-      var a = document.createElement('a');
-      a.href = URL.createObjectURL(blob);
-      a.download = savedName || (project ? project.slug + '.pdf' : 'menu-canvas.pdf');
-      document.body.appendChild(a);
-      a.click();
-      a.remove();
+      var ios = /iPad|iPhone|iPod/.test(navigator.userAgent);
+      if (ios && savedName && project) {
+        // Safari turns a blob download into a stray tab; a real URL with an
+        // attachment header puts the file in Files with the right name
+        window.location.href = SERVICE + '/projects/' + encodeURIComponent(project.slug) +
+          '/exports/' + encodeURIComponent(savedName);
+      } else {
+        var a = document.createElement('a');
+        a.href = URL.createObjectURL(blob);
+        a.download = savedName || (project ? project.slug + '.pdf' : 'menu-canvas.pdf');
+        document.body.appendChild(a);
+        a.click();
+        a.remove();
+      }
       var bits = [];
       if (edits.size) bits.push((applied === null ? edits.size : applied) + ' edited');
       if (adds.length) bits.push((addedN === null ? adds.length : addedN) + ' added');
@@ -1623,9 +1962,9 @@
       var pa = res.headers.get('X-Pages-Added'), pd = res.headers.get('X-Pages-Deleted');
       if (pageOps.new.length) bits.push((pa === null ? pageOps.new.length : pa) + ' page(s) added');
       if (pageOps.delete.length) bits.push((pd === null ? pageOps.delete.length : pd) + ' page(s) deleted');
-      status('exported ' + bits.join(' · ') + ' · ' + Math.round(blob.size / 1024) + 'K' +
-             (savedName ? ' · saved in project' : '') +
-             (refused && refused !== '0' ? ' · ' + refused + ' refused' : ''));
+      done('exported ' + bits.join(' · ') + ' · ' + Math.round(blob.size / 1024) + 'K' +
+           (savedName ? ' · saved in project' : '') +
+           (refused && refused !== '0' ? ' · ' + refused + ' refused' : ''));
     }
 
     var restored = restore();

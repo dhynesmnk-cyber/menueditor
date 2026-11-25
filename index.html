@@ -2,6 +2,11 @@
 <html lang="en">
 <head>
 <meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#f2f5f9">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="default">
+<link rel="manifest" href="manifest.webmanifest">
 <title>Menu Studio</title>
 <style>
   @font-face { font-family: 'MCrimson'; src: url('fonts/CrimsonText-Regular.ttf') format('truetype'); font-weight: 400; font-style: normal; }
@@ -138,6 +143,57 @@
   .warnline.info { color: var(--dim); }
   .modal-actions { display: flex; gap: 8px; padding: 12px 16px; border-top: 1px solid var(--line); align-items: center; }
   .modal-actions .spacer { flex: 1; }
+
+  /* ---- narrow screens --------------------------------------------------- */
+  /* The studio is a three-column desktop tool; a phone gets the stage first and
+     the two panels stacked under it, rather than a 232px rail it cannot use. */
+  @media (max-width: 900px) {
+    /* Not a grid on a phone: the stage comes first, the two panels are scrollable
+       sections below it. Source order puts the block list first, so order fixes that. */
+    body { display: flex; flex-direction: column; overflow: auto; -webkit-text-size-adjust: 100%; }
+    header { order: 0; }
+    main { order: 1; }
+    aside.left { order: 2; }
+    aside.right { order: 3; }
+    header {
+      flex-wrap: wrap; gap: 8px; padding: max(8px, env(safe-area-inset-top)) 12px 8px;
+      position: sticky; top: 0; z-index: 20;
+    }
+    header .brand { font-size: 15px; }
+    header .badge { font-size: 12px; }
+    /* the header keeps what a client needs: the two ways in and the way out */
+    header #fit, header #zoomOut, header #zoomIn, header #zoomLabel { display: none; }
+    .btn { min-height: 44px; padding: 0 14px; font-size: 15px; }
+    main { padding: 10px 10px 14px; min-height: 62vh; }
+    aside { max-height: 46vh; overflow-y: auto; }
+    aside.left { border-right: 0; border-top: 1px solid var(--line); }
+    aside.right { border-left: 0; border-top: 1px solid var(--line); }
+    .sec { padding: 12px; }
+    .sec h2 { font-size: 11px; }
+    .row label { font-size: 14px; }
+    input[type=text], input[type=number], select, textarea { font-size: 16px; padding: 9px 10px; }
+    input[type=number] { width: 96px; }
+    .list button { padding: 11px 8px; font-size: 15px; }
+    .list .tag { font-size: 10px; }
+    .modal-card { width: 100vw; height: 100%; border-radius: 0; }
+    .modal-body { grid-template-columns: 1fr; grid-template-rows: 1fr 1fr; }
+    #importText { border-right: 0; border-bottom: 1px solid var(--line); font-size: 14px; }
+    .modal-actions { flex-wrap: wrap; }
+    .modal-actions .btn { flex: 1 1 auto; }
+    /* nothing that is only reachable on hover can be reached with a thumb */
+    .bound:hover { border-color: transparent; }
+    .bound.sel { border-color: var(--accent); }
+  }
+  @media (max-width: 420px) {
+    header .brand { flex: 1 1 auto; }
+    header #importBtn { display: none; }        /* Keep layout is the way in */
+    header #canvasBtn { order: 2; }
+    header #export { order: 3; }
+  }
+  @media (hover: none) {
+    .btn:hover { background: #ffffff; }
+    .list button:hover { background: none; }
+  }
 </style>
 </head>
 <body>

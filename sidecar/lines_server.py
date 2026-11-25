@@ -107,6 +107,20 @@ class Handler(BaseHTTPRequestHandler):
                     pdf = workspace.original(slug)
                     self._send(200, pdf, "application/pdf")
                     return
+                if len(parts) == 4 and parts[2] == "exports":
+                    # A phone downloads a blob badly (iOS opens it as a stray tab), so the
+                    # export is also a real file behind a URL. Name is whitelisted: no paths.
+                    import re
+                    name = parts[3]
+                    if not re.match(r"^[A-Za-z0-9._-]+\.pdf$", name):
+                        self._json(400, {"error": "bad export name"})
+                        return
+                    epath = os.path.join(workspace.PROJECTS, slug, "exports", name)
+                    with open(epath, "rb") as fh:
+                        body = fh.read()
+                    self._send(200, body, "application/pdf",
+                               {"Content-Disposition": 'attachment; filename="%s"' % name})
+                    return
                 if len(parts) == 4 and parts[2] == "fonts":
                     path = workspace.font_path(slug, parts[3])
                     with open(path, "rb") as fh:

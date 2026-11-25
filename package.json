@@ -16,6 +16,7 @@
     "test:image": ".lines/bin/python test/image-project.py",
     "test:manifest": ".lines/bin/python test/manifest.py",
     "test:reimport": ".lines/bin/python test/reimport.py",
+    "test:mobile": "node test/mobile.js",
     "test:canvas": ".lines/bin/python test/canvas-lines.py out/canvas-shot.png",
     "test:parse": "node test/parse.js",
     "test:inline": "node test/parse-inline.js",

@@ -1,0 +1,213 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>mobile harness</title>
+<style>
+  body { margin: 0; font: 12px/1.4 ui-monospace, monospace; }
+  iframe { border: 0; display: block; }
+  #report { white-space: pre-wrap; padding: 8px; }
+</style>
+</head>
+<body>
+<pre id="report">running…</pre>
+<script>
+// Runs the real app inside an iframe of a given size and checks what a thumb needs:
+// no sideways scrolling, 44px targets, one bar row, a drawer you can type in, a grip
+// you can drag, and a pinch that zooms. The result is JSON in #report, so a headless
+// run can read it back with --dump-dom.
+const SERVICE = 'http://127.0.0.1:8793';
+const out = { ok: true, sizes: [], timing: {}, checks: [] };
+
+function check(size, name, ok, detail) {
+  out.checks.push({ size: size, name: name, ok: !!ok, detail: detail === undefined ? '' : String(detail) });
+  if (!ok) out.ok = false;
+}
+
+function sleep(ms) { return new Promise(r => setTimeout(r, ms)); }
+
+function mkFrame(w, h) {
+  return new Promise(resolve => {
+    const fr = document.createElement('iframe');
+    fr.width = w; fr.height = h;
+    fr.style.width = w + 'px'; fr.style.height = h + 'px';
+    fr.src = '/index.html?v=harness-' + w + '-' + Date.now();
+    fr.onload = () => resolve(fr);
+    document.body.appendChild(fr);
+  });
+}
+
+function ptr(win, el, type, id, x, y) {
+  return el.dispatchEvent(new win.PointerEvent(type, {
+    bubbles: true, cancelable: true, pointerType: 'touch', pointerId: id, isPrimary: id === 11,
+    clientX: x, clientY: y
+  }));
+}
+
+function tap(win, el) {
+  const r = el.getBoundingClientRect();
+  const x = r.left + Math.min(8, r.width / 2), y = r.top + r.height / 2;
+  ptr(win, el, 'pointerdown', 11, x, y);
+  ptr(win, el, 'pointerup', 11, x, y);
+  el.dispatchEvent(new win.MouseEvent('click', { bubbles: true, clientX: x, clientY: y }));
+}
+
+async function runSize(size, slug) {
+  const w = size.w, h = size.h;
+  const tag = w + 'x' + h;
+  out.sizes.push(tag);
+  const fr = await mkFrame(w, h);
+  const win = fr.contentWindow, doc = fr.contentDocument;
+  await sleep(1200);
+
+  // ---- the studio page ------------------------------------------------
+  const de = doc.documentElement;
+  check(tag, 'studio: no sideways scroll', de.scrollWidth <= win.innerWidth + 1,
+        de.scrollWidth + ' > ' + win.innerWidth);
+  const hb = [...doc.querySelectorAll('header button')]
+    .filter(b => getComputedStyle(b).display !== 'none')
+    .map(b => Math.round(b.getBoundingClientRect().height));
+  if (w <= 900) check(tag, 'studio: header buttons >= 44px', hb.every(x => x >= 44), hb.join(','));
+  const mainY = doc.querySelector('main').getBoundingClientRect().top;
+  const leftY = doc.querySelector('aside.left').getBoundingClientRect().top;
+  if (w <= 900) check(tag, 'studio: the sheet comes before the panels', mainY < leftY,
+                      'main@' + Math.round(mainY) + ' left@' + Math.round(leftY));
+
+  // ---- the canvas -----------------------------------------------------
+  const res = await win.fetch(SERVICE + '/projects/' + encodeURIComponent(slug));
+  const j = await res.json();
+  win.MenuCanvas.open({ data: j.lines, project: { slug: j.meta.slug, name: j.meta.name,
+                        fonts: j.fonts || [] }, work: {}, manifest: j.manifest });
+  await sleep(800);
+
+  const lines = doc.querySelectorAll('.cv-line');
+  check(tag, 'canvas: every line is on the stage', lines.length === j.lines.pages[0].objects.length,
+        lines.length + ' of ' + j.lines.pages[0].objects.length);
+  check(tag, 'canvas: no sideways scroll', de.scrollWidth <= win.innerWidth + 1,
+        de.scrollWidth + ' > ' + win.innerWidth);
+
+  const bar = doc.querySelector('.cv-bar').getBoundingClientRect();
+  const barBtns = [...doc.querySelectorAll('.cv-bar button')]
+    .filter(b => b.getBoundingClientRect().width > 0 && getComputedStyle(b).display !== 'none');
+  const small = barBtns.filter(b => b.getBoundingClientRect().height < 44).map(b => b.textContent.trim());
+  if (w <= 720) {
+    check(tag, 'bar: one row', bar.height <= 72, Math.round(bar.height));
+    check(tag, 'bar: every target >= 44px', small.length === 0, small.join(','));
+  }
+
+  // ---- the sheet ------------------------------------------------------
+  const more = doc.querySelector('[data-role=more]');
+  const menu = doc.querySelector('[data-role=menu]');
+  check(tag, 'bar: More exists on a phone', w > 720 || getComputedStyle(more).display !== 'none');
+  more.click();
+  await sleep(300);
+  const menuOpen = menu.classList.contains('on');
+  const mRect = menu.getBoundingClientRect();
+  const menuSmall = [...menu.querySelectorAll('button')]
+    .filter(b => b.getBoundingClientRect().height < 44).map(b => b.textContent.trim());
+  if (w <= 720) {
+    check(tag, 'sheet: opens from More', menuOpen);
+    check(tag, 'sheet: sits on the bottom edge', Math.abs(mRect.bottom - win.innerHeight) < 2,
+          Math.round(mRect.bottom) + ' vs ' + win.innerHeight);
+    check(tag, 'sheet: every button >= 44px', menuSmall.length === 0, menuSmall.join(','));
+  }
+  more.click();
+  await sleep(200);
+
+  // ---- tap a line: the drawer ----------------------------------------
+  const target = lines[8];
+  tap(win, target);
+  await sleep(400);
+  const drawer = doc.querySelector('[data-role=drawer]');
+  if (w <= 720) {
+    check(tag, 'tap: a drawer opens', !!drawer);
+    if (drawer) {
+      const inp = drawer.querySelector('.dr-text');
+      const fs = parseFloat(getComputedStyle(inp).fontSize);
+      const dr = drawer.getBoundingClientRect();
+      check(tag, 'drawer: field is >= 16px (no iOS zoom)', fs >= 16, fs);
+      check(tag, 'drawer: is on screen', dr.height > 120 && dr.bottom <= win.innerHeight + 1,
+            Math.round(dr.height) + 'px at ' + Math.round(dr.bottom));
+      check(tag, 'drawer: the field has focus', doc.activeElement === inp);
+      const done = drawer.querySelector('.dr-done');
+      check(tag, 'drawer: Done is >= 44px', done.getBoundingClientRect().height >= 44,
+            Math.round(done.getBoundingClientRect().height));
+      inp.value = inp.value.replace(/[\d.]+$/, '') + '991';
+      inp.dispatchEvent(new win.Event('input', { bubbles: true }));
+      const live = target.querySelector('.live').textContent;
+      check(tag, 'drawer: typing previews on the page', live === inp.value, live);
+      done.click();
+      await sleep(1500);          // the save is debounced; give it a beat
+      const edited = doc.querySelectorAll('.cv-line.edited').length;
+      check(tag, 'drawer: Done commits the edit', edited === 1, edited);
+      const saved = await (await win.fetch(SERVICE + '/projects/' + encodeURIComponent(slug))).json();
+      check(tag, 'drawer: the edit reaches the server', (saved.work.edits || []).length === 1,
+            (saved.work.edits || []).length);
+      await win.fetch(SERVICE + '/projects/' + encodeURIComponent(slug) + '/work', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ edits: [], adds: [], deletes: [], images: [],
+                               page_ops: { new: [], delete: [] } })
+      });
+    }
+  }
+
+  // ---- the grip -------------------------------------------------------
+  tap(win, lines[9]);
+  await sleep(300);
+  const grip = doc.querySelector('[data-role=grip]');
+  const gripShown = grip && getComputedStyle(grip).display !== 'none';
+  if (w <= 720) {
+    check(tag, 'grip: appears on a tapped line', gripShown);
+    if (gripShown) {
+      const gr = grip.getBoundingClientRect();
+      check(tag, 'grip: is 40px or more', gr.width >= 40 && gr.height >= 40,
+            Math.round(gr.width) + 'x' + Math.round(gr.height));
+      const cx = gr.left + gr.width / 2, cy = gr.top + gr.height / 2;
+      ptr(win, grip, 'pointerdown', 21, cx, cy);
+      ptr(win, grip, 'pointermove', 21, cx + 8, cy + 2);
+      ptr(win, grip, 'pointermove', 21, cx + 22, cy + 4);
+      const moved = lines[9].getAttribute('transform');
+      check(tag, 'grip: dragging moves the line', !!moved, moved || 'no transform');
+      ptr(win, grip, 'pointerup', 21, cx + 22, cy + 4);
+    }
+  }
+
+  // ---- pinch ----------------------------------------------------------
+  const svg = doc.querySelector('.cv-stage svg');
+  const zoom0 = doc.querySelector('[data-role=zlabel]').textContent;
+  ptr(win, svg, 'pointerdown', 31, 150, 400);
+  ptr(win, svg, 'pointerdown', 32, 250, 400);
+  ptr(win, svg, 'pointermove', 31, 110, 400);
+  ptr(win, svg, 'pointermove', 32, 290, 400);
+  ptr(win, svg, 'pointerup', 31, 110, 400);
+  ptr(win, svg, 'pointerup', 32, 290, 400);
+  await sleep(200);
+  const zoom1 = doc.querySelector('[data-role=zlabel]').textContent;
+  check(tag, 'pinch: two fingers change the zoom', zoom0 !== zoom1, zoom0 + ' -> ' + zoom1);
+
+  // ---- cost of the page as it stands ----------------------------------
+  // Node counts, not milliseconds: --virtual-time-budget makes wall-clock numbers
+  // meaningless here (a synchronous open() measures 0). The counts are what decide the
+  // frame cost on a phone, and they are stable.
+  out.timing['svg-nodes@' + tag] = doc.querySelectorAll('.cv-stage *').length;
+  out.timing['glyph-texts@' + tag] = doc.querySelectorAll('.cv-stage text').length;
+
+  fr.remove();
+}
+
+(async () => {
+  try {
+    const slug = new URLSearchParams(location.search).get('slug');
+    if (!slug) throw new Error('no slug');
+    const sizes = [{ w: 390, h: 844 }, { w: 360, h: 740 }, { w: 768, h: 1024 }];
+    for (const s of sizes) await runSize(s, slug);
+  } catch (e) {
+    out.ok = false;
+    out.checks.push({ size: '-', name: 'harness', ok: false, detail: e.message + ' ' + (e.stack || '') });
+  }
+  document.getElementById('report').textContent = JSON.stringify(out, null, 1);
+  document.title = out.ok ? 'HARNESS-PASS' : 'HARNESS-FAIL';
+})();
+</script>
+</body>
+</html>
