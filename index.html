@@ -295,10 +295,22 @@
 <script src="src/design.js"></script>
 <script src="src/planner.js"></script>
 <script src="src/pdf.js"></script>
+<!-- A phone preview through a tunnel puts the page and the sidecar on different origins, so the
+     host-derived service URL is wrong there: ?svc=https://…:8793 wins when it is given. It has
+     to be set before canvas.js runs, which is why it is not in the script further down. -->
+<script>
+(function () {
+  var m = /[?&]svc=([^&]+)/.exec(location.search);
+  if (m) {
+    var v = decodeURIComponent(m[1]).replace(/\/+$/, '');
+    window.LINES_SERVICE = (v === 'same' || v === 'origin') ? '' : v;
+  }
+})();
+</script>
 <!-- bump both when either changes: without a query the browser keeps the old file and a
      fixed bug looks unfixed -->
-<script src="src/lines.js?v=201"></script>
-<script src="src/canvas.js?v=201"></script>
+<script src="src/lines.js?v=203"></script>
+<script src="src/canvas.js?v=203"></script>
 <script>
 const PT = 72;
 const state = { menu: null, lay: null, sel: null, zoom: 1, zoomScale: 1 };
@@ -1261,7 +1273,7 @@ function applyDesign(t) {
    gets back line objects with the page's own glyph positions, and opens the
    overlay. Nothing here touches the model, the engine or the exporter. */
 (function () {
-  const SERVICE = window.LINES_SERVICE ||
+  const SERVICE = typeof window.LINES_SERVICE === 'string' ? window.LINES_SERVICE :
     (/^https?:/.test(location.protocol) ? '//' + location.hostname + ':8793'
                                         : 'http://127.0.0.1:8793');
   const btn = document.getElementById('canvasBtn');

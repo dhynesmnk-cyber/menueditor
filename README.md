@@ -242,12 +242,29 @@ to loopback afterwards. On ChromeOS the container's address is not on the Wi-Fi:
 ports 8791 and 8793 to Linux (Settings → Developers → Linux → Port forwarding) and use
 the Chromebook's own address.
 
-Verified at 390x844, 360x740, 768x1024 and 1280x800 with `npm run test:mobile` (83
-checks: no sideways scroll, 44 px targets, one bar row, no clipped labels, every button
-named, the sheet on the bottom edge, a 16 px focused drawer field that says when the text
-is too long, a drawer that rides above a stubbed keyboard and comes back down, an edit
-that reaches the server, a grip that moves a line, a pinch that changes the zoom, and the
-desktop bar still one toolbar).
+When the phone is not on the same network there is one host to reach, not two:
+
+    npm run serve:proxy                   # :8795 = files + /projects,/splice,/health,/reimport
+    ngrok http 8795                       # one tunnel, one origin
+    https://<that-host>/index.html?svc=same
+
+`?svc=same` tells the page the sidecar is its own origin, which is how a single tunnel can
+carry both; `?svc=https://elsewhere:8793` points it somewhere else instead, and the default
+is still the host it was served from. Free ngrok shows a one-tap "Visit Site" notice — a
+page header of `ngrok-skip-browser-warning` skips it for scripts.
+
+**A tunnel is a public door.** The sidecar has no authentication and the proxy adds none:
+anyone with the URL can list, edit and export every project, and the tunnel is up until
+the process is killed. Use it for a preview, then stop it.
+
+Verified at 390x844, 360x740, 768x1024, 1280x800 and 1920x1080 with `npm run test:mobile`
+(136 checks: no sideways scroll, one row of controls with the status on its own line, 44 px
+targets, no clipped labels, every button named, the sheet on the bottom edge, a 16 px
+focused drawer field that says when the text is too long, a drawer that rides above a
+stubbed keyboard and comes back down, a nudge that moves a line a point and is one undo,
+an arrow key that does the same, a duplicate page whose armed delete needs a second tap and
+two undos to unwind, an edit that reaches the server, a grip that moves a line, a pinch that
+changes the zoom, and the desktop toolbar one row at 1920 with More below 1760).
 
 Measured rather than assumed: mounting the 217-line page costs 104–193 ms on a desktop
 CPU, and a 40-frame grip drag runs at 16.7 ms median / 18.1 ms max — one frame each, no

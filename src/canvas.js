@@ -23,9 +23,12 @@
 
   // Same origin as the page: on a phone the page is not at 127.0.0.1, so a hardcoded
   // localhost sidecar would make the phone call itself. LINES_SERVICE still wins.
-  var SERVICE = root.LINES_SERVICE || (root.location && /^https?:/.test(root.location.protocol)
-    ? '//' + root.location.hostname + ':8793'
-    : 'http://127.0.0.1:8793');
+  // An explicit setting wins even when it is the empty string: behind a proxy that carries both
+  // the files and the API, the sidecar is the page's own origin and '' is the right answer.
+  var SERVICE = typeof root.LINES_SERVICE === 'string' ? root.LINES_SERVICE
+    : (root.location && /^https?:/.test(root.location.protocol)
+      ? '//' + root.location.hostname + ':8793'
+      : 'http://127.0.0.1:8793');
   var Z = 2;                 // px per pt
   var STORE = 'menucanvas:';
 
