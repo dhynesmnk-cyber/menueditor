@@ -250,9 +250,13 @@ the Chromebook's own address.
 
 When the phone is not on the same network there is one host to reach, not two:
 
-    npm run serve:proxy                   # :8795 = files + /projects,/splice,/health,/reimport
-    ngrok http 8795                       # one tunnel, one origin
-    https://<that-host>/index.html?svc=same
+    PREVIEW_TOKEN=something npm run serve:proxy   # :8795 = files + /projects,/splice,/health
+    ngrok http 8795                              # one tunnel, one origin
+    https://<that-host>/?k=something&svc=same    # the key once, then a cookie
+
+With `PREVIEW_TOKEN` set the proxy answers 401 to anything without it; the key is accepted once
+in the URL and kept in a `pv` cookie, so scripts, fonts and PDF downloads follow without it.
+Without the variable the proxy is as open as the sidecar.
 
 Exports are set in the face the PDF itself names. A family found on this machine or in `fonts/`
 is used from that file; a base-14 name (Helvetica, Times, Courier, Symbol, ZapfDingbats) is drawn
@@ -265,9 +269,9 @@ carry both; `?svc=https://elsewhere:8793` points it somewhere else instead, and 
 is still the host it was served from. Free ngrok shows a one-tap "Visit Site" notice — a
 page header of `ngrok-skip-browser-warning` skips it for scripts.
 
-**A tunnel is a public door.** The sidecar has no authentication and the proxy adds none:
-anyone with the URL can list, edit and export every project, and the tunnel is up until
-the process is killed. Use it for a preview, then stop it.
+**A tunnel is a public door.** The sidecar has no authentication of its own; with
+`PREVIEW_TOKEN` the proxy puts a key in front of it, and without one anyone with the URL can
+list, edit and export every project. Either way the tunnel is up until the process is killed.
 
 Verified at 390x844, 360x740, 768x1024, 1280x800 and 1920x1080 with `npm run test:mobile`
 (136 checks: no sideways scroll, one row of controls with the status on its own line, 44 px

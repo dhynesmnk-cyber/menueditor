@@ -8,6 +8,7 @@
     "start": "python3 -m http.server 8791 --bind 127.0.0.1",
     "serve:lan": "python3 -m http.server 8791 --bind 0.0.0.0",
     "serve:proxy": "python3 tools/preview-proxy.py",
+    "serve:proxy:keyed": "PREVIEW_TOKEN=${PREVIEW_TOKEN:?set PREVIEW_TOKEN first} python3 tools/preview-proxy.py",
     "ocr": ".ocr/bin/python ocr/server.py",
     "canvas": ".lines/bin/python sidecar/lines_server.py",
     "test": "node test/parse.js && node test/parse-inline.js && node test/design.js && node test/planner.js && node test/pagination.js && node test/block-index.js && node test/pdf-ela.js && node test/import-e2e.js && node test/fidelity.js && node test/lines.js",

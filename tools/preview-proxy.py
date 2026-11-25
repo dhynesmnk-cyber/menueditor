@@ -6,19 +6,25 @@ page's host. Through a tunnel there is one hostname and one port, so the page ca
 :8793 at all: this listens on :8795 and puts the API paths on the same origin as the files.
 Load the page with ?svc=same and the client uses relative URLs.
 
-Deliberately small and unauthenticated, like the sidecar: it is a preview tool, and it must be
-killed when the preview is over. Only what the editor actually calls is routed.
+Deliberately small. Set PREVIEW_TOKEN and every request needs it once, as ?k=…, which is then
+kept in a cookie so the assets, the fetches and the PDF downloads all follow. Unset it and the
+proxy is open, like the sidecar — a preview tool that must be killed when the preview is over.
+Only what the editor actually calls is routed.
 """
 
 import os
 import sys
 import urllib.error
+import urllib.parse
 import urllib.request
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 STATIC = "http://127.0.0.1:8791"
 API = "http://127.0.0.1:8793"
 PORT = int(os.environ.get("PREVIEW_PORT", "8795"))
+TOKEN = os.environ.get("PREVIEW_TOKEN") or ""
+COOKIE = "pv"
+MONTH = 2592000
 
 # The sidecar owns everything under /projects plus these three verbs. Everything else is a file.
 API_PREFIXES = ("/projects", "/splice", "/health", "/reimport")
@@ -36,7 +42,49 @@ class Handler(BaseHTTPRequestHandler):
     def log_message(self, fmt, *args):
         sys.stderr.write("%s %s\n" % (self.address_string(), fmt % args))
 
+    def _gate(self):
+        """True when this request may pass; answers the request itself when it may not.
+
+        A phone cannot send a header, so the token arrives once in the URL and is swapped for a
+        cookie: the page then loads its scripts, its fonts and its PDFs without the token coming
+        back in every one of them.
+        """
+        if not TOKEN:
+            return True
+        parts = urllib.parse.urlsplit(self.path)
+        given = (urllib.parse.parse_qs(parts.query).get("k") or [""])[0]
+        if given == TOKEN:
+            keep = urllib.parse.parse_qsl(parts.query)
+            keep = [(k, v) for k, v in keep if k != "k"]
+            where = parts.path + ("?" + urllib.parse.urlencode(keep) if keep else "")
+            self.send_response(302)
+            self.send_header("Location", where or "/")
+            self.send_header("Set-Cookie", "%s=%s; Path=/; Max-Age=%d; HttpOnly; SameSite=Lax"
+                             % (COOKIE, TOKEN, MONTH))
+            self.send_header("Content-Length", "0")
+            self.end_headers()
+            return False
+        sent = ""
+        for chunk in (self.headers.get("Cookie") or "").split(";"):
+            name, _, value = chunk.strip().partition("=")
+            if name == COOKIE:
+                sent = value
+        if sent == TOKEN:
+            return True
+        body = (b"<!doctype html><meta name=viewport content='width=device-width,initial-scale=1'>"
+                b"<p style=\"font:16px/1.5 system-ui;padding:32px\">This preview needs its link. "
+                b"Ask Dave for the address with the key on the end.</p>")
+        self.send_response(401)
+        self.send_header("Content-Type", "text/html; charset=utf-8")
+        self.send_header("Content-Length", str(len(body)))
+        self.end_headers()
+        if self.command != "HEAD":
+            self.wfile.write(body)
+        return False
+
     def _relay(self, method):
+        if not self._gate():
+            return
         length = int(self.headers.get("Content-Length") or 0)
         body = self.rfile.read(length) if length else None
         target = upstream_for(self.path) + self.path
