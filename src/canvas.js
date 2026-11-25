@@ -117,6 +117,12 @@
       '.cv-panel .row span{font:11px/1.3 ui-monospace,monospace;color:#667485}',
       '.cv-panel .foot{display:flex;gap:8px;justify-content:flex-end;padding:12px 16px;border-top:1px solid #dbe2ec}',
       '.cv-panel .empty{padding:16px;color:#667485;font:12px/1.5 system-ui,sans-serif}',
+      '.cv-panel .row{flex-wrap:wrap}',
+      '.cv-panel .row .more{flex:0 0 auto;min-width:44px;min-height:36px;padding:0 8px;font-size:16px;line-height:1}',
+      '.cv-panel .edit{flex:1 1 100%;display:flex;gap:8px;align-items:center;padding:4px 0 8px}',
+      '.cv-panel .edit input{flex:1 1 auto;min-width:0;font:16px/1.2 system-ui,sans-serif;',
+      '  min-height:44px;padding:8px 10px;border:1px solid #c9d2e0;border-radius:7px}',
+      '.cv-panel .edit .cv-btn{min-height:40px;white-space:nowrap}',
       // ---- touch and narrow screens -------------------------------------
       // A thumb needs 44px and no hover. The bar keeps name, status, undo, More,
       // Export and Close; everything else moves into a sheet that slides up from the
@@ -2261,6 +2267,8 @@
   function openWorkspace(opts) {
     opts = opts || {};
     styles();
+    // the page opens on this chooser now, and Keep layout can also call it: never stack two
+    Array.prototype.forEach.call(document.querySelectorAll('.cv-panel'), function (p) { p.remove(); });
     var panel = document.createElement('div');
     panel.className = 'cv-panel on';
     panel.innerHTML =
@@ -2293,29 +2301,101 @@
         .catch(function (e) { rows.innerHTML = '<div class="empty">' + esc(e.message) + '</div>'; });
     }
 
-    fetch(SERVICE + '/projects')
-      .then(function (r) { return r.json(); })
-      .then(function (j) {
-        var list = j.projects || [];
-        if (!list.length) {
-          rows.innerHTML = '<div class="empty">No menus yet. “New from file…” turns the PDF ' +
-            'a designer sent into a menu you can keep editing — the original is never altered.</div>';
+    // A client's list of menus is a list of their documents, so it gets the two things a list of
+    // documents needs: a name they chose, and a way to throw one away. Both are two-tap
+    // destructive actions (arm, then act) because a thumb on a phone lands where it lands.
+    var armed = { slug: '', at: 0 };
+
+    function loadList() {
+      fetch(SERVICE + '/projects')
+        .then(function (r) { return r.json(); })
+        .then(function (j) {
+          var list = j.projects || [];
+          if (!list.length) {
+            rows.innerHTML = '<div class="empty">No menus yet. “New from file…” turns the PDF ' +
+              'a designer sent into a menu you can keep editing — the original is never altered.</div>';
+            return;
+          }
+          rows.innerHTML = list.map(function (p) {
+            return '<div class="row" data-slug="' + esc(p.slug) + '"><div style="flex:1" data-act="open">' +
+              '<b>' + esc(p.name) + '</b><br><span>' + p.pages + ' page' + (p.pages === 1 ? '' : 's') +
+              ' · updated ' + esc(String(p.updated || '').replace('T', ' ')) +
+              (p.hasEdits ? ' · has changes' : '') + '</span></div>' +
+              '<button class="cv-btn more" data-act="menu" aria-label="Rename or delete ' +
+              esc(p.name) + '">⋯</button></div>';
+          }).join('');
+        })
+        .catch(function () {
+          rows.innerHTML = '<div class="empty">The sidecar is not answering on ' + SERVICE +
+            '. Start it with <code>.lines/bin/python sidecar/lines_server.py</code>.</div>';
+        });
+    }
+
+    function rowOf(el) {
+      while (el && el !== rows && !(el.classList && el.classList.contains('row'))) el = el.parentNode;
+      return el && el !== rows ? el : null;
+    }
+
+    function editRow(row) {
+      var slug = row.dataset.slug;
+      var name = row.querySelector('b').textContent;
+      var box = document.createElement('div');
+      box.className = 'edit';
+      box.innerHTML = '<input type="text" value="' + esc(name) + '" maxlength="80" ' +
+        'aria-label="Menu name">' +
+        '<button class="cv-btn primary" data-act="save">Save</button>' +
+        '<button class="cv-btn" data-act="del">Delete</button>';
+      row.appendChild(box);
+      var inp = box.querySelector('input');
+      inp.focus();
+      inp.select();
+      box.querySelector('[data-act=save]').onclick = function () {
+        var next = inp.value.trim();
+        if (!next) { inp.focus(); return; }
+        fetch(SERVICE + '/projects/' + encodeURIComponent(slug) + '/rename', {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ name: next })
+        }).then(function (r) { return r.json(); })
+          .then(function () { loadList(); })
+          .catch(function () { inp.value = name; });
+      };
+      inp.onkeydown = function (ev) {
+        if (ev.key === 'Enter') box.querySelector('[data-act=save]').click();
+        if (ev.key === 'Escape') { box.remove(); }
+        ev.stopPropagation();
+      };
+      var del = box.querySelector('[data-act=del]');
+      del.onclick = function () {
+        var now = Date.now();
+        if (armed.slug !== slug || now - armed.at > 4000) {
+          armed = { slug: slug, at: now };
+          del.classList.add('armed');
+          del.textContent = 'Delete?';
           return;
         }
-        rows.innerHTML = list.map(function (p) {
-          return '<div class="row" data-slug="' + esc(p.slug) + '"><div style="flex:1">' +
-            '<b>' + esc(p.name) + '</b><br><span>' + p.pages + ' page' + (p.pages === 1 ? '' : 's') +
-            ' · updated ' + esc(String(p.updated || '').replace('T', ' ')) +
-            (p.hasEdits ? ' · has changes' : '') + '</span></div></div>';
-        }).join('');
-        rows.querySelectorAll('.row').forEach(function (row) {
-          row.onclick = function () { openSlug(row.dataset.slug); };
-        });
-      })
-      .catch(function () {
-        rows.innerHTML = '<div class="empty">The sidecar is not answering on ' + SERVICE +
-          '. Start it with <code>.lines/bin/python sidecar/lines_server.py</code>.</div>';
-      });
+        del.disabled = true;
+        del.textContent = 'deleting…';
+        fetch(SERVICE + '/projects/' + encodeURIComponent(slug) + '/delete', { method: 'POST' })
+          .then(function (r) { return r.json(); })
+          .then(function () { armed = { slug: '', at: 0 }; loadList(); })
+          .catch(function () { del.disabled = false; del.textContent = 'Delete'; });
+      };
+    }
+
+    rows.addEventListener('click', function (ev) {
+      var row = rowOf(ev.target);
+      if (!row) return;
+      var act = ev.target.getAttribute && ev.target.getAttribute('data-act');
+      if (act === 'menu') {
+        var open = row.querySelector('.edit');
+        if (open) { open.remove(); return; }
+        editRow(row);
+        return;
+      }
+      if (act === 'open' || ev.target === row) openSlug(row.dataset.slug);
+    });
+
+    loadList();
 
     panel.querySelector('[data-role=cancel]').onclick = close;
     panel.querySelector('[data-role=newfile]').onclick = function () {

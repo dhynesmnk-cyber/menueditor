@@ -66,6 +66,48 @@ async function runSize(size, slug) {
   const fakeVV = Object.assign(new win.EventTarget(), { height: win.innerHeight, offsetTop: 0, width: w });
   Object.defineProperty(win, 'visualViewport', { value: fakeVV, configurable: true });
 
+  // ---- the front door -------------------------------------------------
+  // The page lands on the client's menus, not on the studio.
+  let chooser = doc.querySelector('.cv-panel.on');
+  check(tag, 'chooser: the page opens on the menu list', !!chooser, chooser ? 'open' : 'missing');
+  const names = () => chooser ? [...chooser.querySelectorAll('.row b')].map(b => b.textContent) : [];
+  check(tag, 'chooser: the scratch menu is listed', names().some(n => /Mobile Harness/.test(n)),
+        names().join(' | '));
+  if (w === 390 && chooser) {
+    const row = [...chooser.querySelectorAll('.row')].find(r => /Mobile Harness/.test(r.textContent));
+    const more = row.querySelector('[data-act=menu]');
+    check(tag, 'chooser: 44px menu button on every row',
+          more.getBoundingClientRect().width >= 44 && more.getBoundingClientRect().height >= 36,
+          Math.round(more.getBoundingClientRect().width) + 'x' + Math.round(more.getBoundingClientRect().height));
+    more.click();
+    await sleep(150);
+    const inp = row.querySelector('.edit input');
+    const fs_ = parseFloat(win.getComputedStyle(inp).fontSize);
+    check(tag, 'chooser: the rename field will not make iOS zoom',
+          inp.getBoundingClientRect().height >= 44 && fs_ >= 16,
+          Math.round(inp.getBoundingClientRect().height) + 'px / ' + fs_ + 'px type');
+    inp.value = 'Mobile Harness Renamed';
+    row.querySelector('[data-act=save]').click();
+    await sleep(900);
+    check(tag, 'chooser: a rename reaches the list', names().some(n => /Renamed/.test(n)),
+          names().join(' | '));
+    const server = await (await win.fetch(SERVICE + '/projects/' + encodeURIComponent(slug))).json();
+    check(tag, 'chooser: a rename reaches the server', /Renamed/.test(server.meta.name), server.meta.name);
+    // and back, so the rest of the run is not confused by the name
+    const row2 = [...chooser.querySelectorAll('.row')].find(r => /Renamed/.test(r.textContent));
+    row2.querySelector('[data-act=menu]').click();
+    await sleep(150);
+    row2.querySelector('.edit input').value = 'Mobile Harness';
+    row2.querySelector('[data-act=save]').click();
+    await sleep(900);
+    check(tag, 'chooser: the name comes back', names().some(n => /Mobile Harness$/.test(n)),
+          names().join(' | '));
+  }
+  if (chooser) chooser.querySelector('[data-role=cancel]').click();
+  await sleep(200);
+  chooser = doc.querySelector('.cv-panel.on');
+  check(tag, 'chooser: closing it leaves the studio', !chooser, chooser ? 'still open' : 'closed');
+
   // ---- the studio page ------------------------------------------------
   const de = doc.documentElement;
   check(tag, 'studio: no sideways scroll', de.scrollWidth <= win.innerWidth + 1,
@@ -338,6 +380,51 @@ async function runSize(size, slug) {
   await sleep(200);
   const zoom1 = doc.querySelector('[data-role=zlabel]').textContent;
   check(tag, 'pinch: two fingers change the zoom', zoom0 !== zoom1, zoom0 + ' -> ' + zoom1);
+
+  // ---- a delete goes through the panel, two taps and all ---------------
+  // Only once: the scratch project is shared by every size, and this one is a throwaway made
+  // from the same file precisely so the destructive path can be exercised without eating it.
+  if (w === 390) {
+    win.MenuCanvas.openWorkspace({});
+    await sleep(800);
+    const p1 = doc.querySelector('.cv-panel.on');
+    const bytes = new Uint8Array(await (await win.fetch(SERVICE + '/projects/' +
+      encodeURIComponent(slug) + '/original')).arrayBuffer());
+    let b64 = '';
+    for (let i = 0; i < bytes.length; i += 0x8000) {
+      b64 += String.fromCharCode.apply(null, bytes.subarray(i, i + 0x8000));
+    }
+    const made = await (await win.fetch(SERVICE + '/projects', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ name: 'Delete Me', pdf: win.btoa(b64) })
+    })).json();
+    const dead = made.meta && made.meta.slug;
+    win.MenuCanvas.openWorkspace({});
+    await sleep(1200);
+    const chooser2 = doc.querySelector('.cv-panel.on');
+    const row = [...chooser2.querySelectorAll('.row')].find(r => /Delete Me/.test(r.textContent));
+    check(tag, 'chooser: a new project appears without a reload', !!row, dead || 'not listed');
+    if (row) {
+      row.querySelector('[data-act=menu]').click();
+      await sleep(150);
+      const del = row.querySelector('[data-act=del]');
+      del.click();
+      await sleep(200);
+      check(tag, 'chooser: Delete arms instead of acting',
+            /armed/.test(del.className) && /Delete\?/.test(del.textContent),
+            del.className + ' / ' + del.textContent);
+      const stillThere = await win.fetch(SERVICE + '/projects/' + encodeURIComponent(dead));
+      check(tag, 'chooser: one tap deletes nothing', stillThere.ok, 'status ' + stillThere.status);
+      del.click();
+      await sleep(1200);
+      const after = [...doc.querySelectorAll('.cv-panel .row b')].map(b => b.textContent).join(' | ');
+      check(tag, 'chooser: the second tap deletes it', !/Delete Me/.test(after), after);
+      const gone = await win.fetch(SERVICE + '/projects/' + encodeURIComponent(dead));
+      check(tag, 'chooser: the project is gone from disk', gone.status === 404, 'status ' + gone.status);
+    }
+    chooser2.querySelector('[data-role=cancel]').click();
+    await sleep(150);
+  }
 
   // ---- cost of the page as it stands ----------------------------------
   // Node counts, not milliseconds: --virtual-time-budget makes wall-clock numbers

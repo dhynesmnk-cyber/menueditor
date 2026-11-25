@@ -62,7 +62,9 @@ function findChrome() {
   const url = STATIC + '/test/mobile.html?slug=' + encodeURIComponent(slug);
   const args = ['--headless=new', '--disable-gpu', '--no-sandbox', '--hide-scrollbars',
                 '--window-size=390,900', '--force-device-scale-factor=3',
-                '--virtual-time-budget=40000', '--dump-dom', url];
+                // the dump happens when the budget runs out, so this is headroom, not a timeout:
+                // five sizes, a rename round trip and a real import all run inside it
+                '--virtual-time-budget=150000', '--dump-dom', url];
   let dom = '';
   try {
     dom = execFileSync(chrome, args, { encoding: 'utf8', maxBuffer: 64 * 1024 * 1024, timeout: 180000 });

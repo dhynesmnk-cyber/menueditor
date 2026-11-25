@@ -94,6 +94,42 @@ def _width_of(font, text, size, track_em):
     return adv + track_em * size * max(0, len(text) - 1)
 
 
+# The fourteen faces every PDF reader is required to have. A file that names one of these is
+# not asking for a substitute: drawing it by name *is* the original face, with no file needed.
+_BASE14 = (
+    ("helvetica", {"": "helv", "bold": "hebo", "italic": "heit", "oblique": "heit",
+                   "bolditalic": "hebi", "boldoblique": "hebi"}),
+    ("arial", {"": "helv", "bold": "hebo", "italic": "heit", "oblique": "heit",
+               "bolditalic": "hebi", "boldoblique": "hebi"}),
+    ("times", {"": "tiro", "bold": "tibo", "italic": "tiit", "oblique": "tiit",
+               "bolditalic": "tibi", "boldoblique": "tibi"}),
+    ("courier", {"": "cour", "bold": "cobo", "italic": "coit", "oblique": "coit",
+                 "bolditalic": "cobi", "boldoblique": "cobi"}),
+    ("symbol", {"": "symb"}),
+    ("zapfdingbats", {"": "zadb"}),
+)
+
+
+def _base14(family):
+    """pymupdf's alias for a base-14 face, or None when this face needs a real file."""
+    key = re.sub(r"[^a-z]", "", (family or "").split("+")[-1].lower())
+    for stem, styles in _BASE14:
+        if key.startswith(stem):
+            rest = key[len(stem):].replace("newroman", "")
+            for style in ("bolditalic", "boldoblique", "bold", "italic", "oblique"):
+                if rest.startswith(style):
+                    return styles.get(style)
+            return styles.get("") if rest in ("", "regular", "roman", "mt", "ps") else styles.get("")
+    return None
+
+
+def _face_by_alias(alias):
+    try:
+        return pymupdf.Font(fontname=alias)
+    except Exception:                                              # noqa: BLE001
+        return None
+
+
 def _open_font(path):
     if not path:
         return None
@@ -245,12 +281,13 @@ def build(doc_bytes, edits=None, images=None, adds=None, deletes=None, font_path
             continue
 
         face_path = font_paths.get(family) or resolve_font_path(family)
-        if not face_path:
+        alias = _base14(family) if not face_path else None
+        if not face_path and not alias:
             refused.append({"gi": o["gi"], "reason": "font not installed: %s" % family,
                             "text": o["text"][:40]})
             continue
 
-        font = _open_font(face_path) or _face(doc, family)
+        font = _open_font(face_path) or _face_by_alias(alias) or _face(doc, family)
         limit = float(o.get("max_width") or o["ink_width"])
         w = _width_of(font, text, size, track)
         if w > limit:
@@ -339,6 +376,11 @@ def build(doc_bytes, edits=None, images=None, adds=None, deletes=None, font_path
             return names[key]
         path = font_paths.get(family) or resolve_font_path(family)
         name = "X%d" % len(names)
+        alias = _base14(family) if not path else None
+        if alias:
+            # a base-14 name is the face itself, not a stand-in, and needs no file
+            names[key] = (alias, _face_by_alias(alias))
+            return names[key]
         if not path:
             # Unreachable for edits (they are refused above) and for adds (likewise). Kept as an
             # exception rather than a substitution so no future path can quietly draw Helvetica.
@@ -374,7 +416,7 @@ def build(doc_bytes, edits=None, images=None, adds=None, deletes=None, font_path
             if not text.strip():
                 continue
             family = a.get("font") or "helv"
-            if not (font_paths.get(family) or resolve_font_path(family)):
+            if not (font_paths.get(family) or resolve_font_path(family) or _base14(family)):
                 refused.append({"add": a.get("id"), "reason": "font not found: %s" % family})
                 continue
             draw(pno, text, float(a["x"]), float(a["y"]), float(a.get("size") or 12),

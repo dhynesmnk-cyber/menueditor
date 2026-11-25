@@ -18,6 +18,7 @@ import hashlib
 import json
 import os
 import re
+import shutil
 import time
 
 HERE = os.path.dirname(os.path.abspath(__file__))
@@ -229,6 +230,31 @@ def listing():
         out.append(meta)
     out.sort(key=lambda m: m.get("updated") or "", reverse=True)
     return out
+
+
+def rename(slug, name):
+    """Only the label changes: the PDF, the work and the exports keep their place."""
+    d = _dir(slug)
+    meta = _read_json(os.path.join(d, "meta.json"))
+    if not meta:
+        raise FileNotFoundError("no such project: %s" % slug)
+    clean = " ".join(str(name or "").split())[:80]
+    if not clean:
+        raise ValueError("a menu needs a name")
+    meta["name"] = clean
+    meta["updated"] = _now()
+    _write_json(os.path.join(d, "meta.json"), meta)
+    return meta
+
+
+def delete(slug):
+    """A project is one directory, so deleting it is one move: no orphans to tidy later."""
+    d = _dir(slug)
+    if not os.path.isdir(d):
+        raise FileNotFoundError("no such project: %s" % slug)
+    # _dir() has already refused anything that is not a plain slug, so this cannot climb out
+    shutil.rmtree(d)
+    return {"deleted": slug}
 
 
 def open_project(slug):

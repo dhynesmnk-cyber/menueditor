@@ -10,6 +10,7 @@ import base64
 import json
 import os
 import sys
+import urllib.error
 import urllib.request
 
 import pymupdf
@@ -31,9 +32,12 @@ def post(path, payload, raw=False, ctype="application/json"):
     body = json.dumps(payload).encode() if not raw else payload
     req = urllib.request.Request(BASE + path, data=body, method="POST",
                                  headers={"Content-Type": ctype})
-    with urllib.request.urlopen(req, timeout=180) as r:
-        data = r.read()
-        headers = dict(r.headers)
+    try:
+        with urllib.request.urlopen(req, timeout=180) as r:
+            data = r.read()
+            headers = dict(r.headers)
+    except urllib.error.HTTPError as e:      # a refusal is an answer: let the check see it
+        return json.loads(e.read() or b"{}"), e.code
     if ctype == "application/pdf" or headers.get("Content-Type", "").startswith("application/pdf"):
         return data, headers
     return json.loads(data or b"{}"), headers
@@ -43,6 +47,15 @@ def get(path, binary=False):
     with urllib.request.urlopen(BASE + path, timeout=120) as r:
         data = r.read()
     return data if binary else json.loads(data or b"{}")
+
+
+def get_code(path):
+    """(body, status) for a URL that may refuse: 404 is an answer worth asserting."""
+    try:
+        with urllib.request.urlopen(BASE + path, timeout=120) as r:
+            return r.read(), r.status
+    except urllib.error.HTTPError as e:
+        return e.read(), e.code
 
 
 def main():
@@ -154,6 +167,28 @@ def main():
     again = get("/projects/" + slug)
     ok(len(again["work"]["adds"]) == 1, "work comes back on re-open")
     ok(bool(again["meta"]["updated"]), "project timestamp bumped", again["meta"]["updated"])
+
+    print("\n== the list is a list of documents ==")
+    renamed, rcode = post("/projects/%s/rename" % slug, {"name": "  A   Client\n Menu  "})
+    ok(isinstance(rcode, dict), "rename answers with the project, not a refusal",
+       type(rcode).__name__)
+    ok(renamed["name"] == "A Client Menu", "rename tidies the name it is given", repr(renamed["name"]))
+    ok(get("/projects")["projects"][0]["name"] == "A Client Menu", "the list shows the new name")
+    empty, code = post("/projects/%s/rename" % slug, {"name": "   "})
+    ok(code == 400, "an empty name is refused", "%s %s" % (code, empty))
+    bad, code = post("/projects/../etc/rename", {"name": "nope"})
+    ok(code == 404, "a slug that could climb out of the folder is refused", code)
+    alive = get("/projects/" + slug)
+    ok(alive["meta"]["name"] == "A Client Menu", "the project survived both refusals")
+
+    kill, _ = post("/projects/%s/delete" % slug, {})
+    ok(isinstance(kill, dict) and kill.get("deleted") == slug,
+       "delete reports what it removed", kill)
+    ok(not os.path.isdir(os.path.join(ROOT, "projects", slug)), "the folder is gone from disk")
+    _, code = get_code("/projects/" + slug)
+    ok(code == 404, "and it cannot be opened afterwards", code)
+    again, code = post("/projects/%s/delete" % slug, {})
+    ok(code == 404, "deleting it twice is a 404, not a crash", "%s %s" % (code, again))
 
     passed = sum(1 for c in checks if c)
     print("\n%s — %d/%d checks" % ("PASS" if passed == len(checks) else "FAIL", passed, len(checks)))

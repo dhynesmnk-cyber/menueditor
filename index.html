@@ -309,8 +309,8 @@
 </script>
 <!-- bump both when either changes: without a query the browser keeps the old file and a
      fixed bug looks unfixed -->
-<script src="src/lines.js?v=204"></script>
-<script src="src/canvas.js?v=204"></script>
+<script src="src/lines.js?v=206"></script>
+<script src="src/canvas.js?v=206"></script>
 <script>
 const PT = 72;
 const state = { menu: null, lay: null, sel: null, zoom: 1, zoomScale: 1 };
@@ -1311,6 +1311,15 @@ function applyDesign(t) {
     // menu, not on a file dialog.
     MenuCanvas.openWorkspace({ onClose: () => say('menu closed — reopen from Keep layout') });
   });
+
+  // Land on the client's menus. The studio behind this is for setting a menu from scratch,
+  // which is not what someone who already has a menu opens the page to see. Guarded so it can
+  // never fight a panel that is already open (a click during load, or the harness).
+  (async () => {
+    if (!(await sidecar())) return;
+    if (document.querySelector('.cv-panel, .cv-overlay')) return;
+    MenuCanvas.openWorkspace({ onClose: () => say('menu closed — reopen from Keep layout') });
+  })();
 
   file.addEventListener('change', async () => {
     const f = file.files && file.files[0];

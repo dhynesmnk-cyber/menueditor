@@ -186,6 +186,13 @@ class Handler(BaseHTTPRequestHandler):
                 if len(parts) == 3 and parts[2] == "manifest":
                     self._json(200, workspace.write_manifest(slug, self._payload()))
                     return
+                if len(parts) == 3 and parts[2] == "rename":
+                    payload = self._payload()
+                    self._json(200, workspace.rename(slug, payload.get("name")))
+                    return
+                if len(parts) == 3 and parts[2] == "delete":
+                    self._json(200, workspace.delete(slug))
+                    return
                 if len(parts) == 3 and parts[2] == "export":
                     self._project_export(slug, self._payload())
                     return
