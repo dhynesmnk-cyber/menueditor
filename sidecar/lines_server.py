@@ -35,6 +35,10 @@ import splice      # noqa: E402
 import workspace   # noqa: E402
 
 PORT = int(os.environ.get("LINES_PORT", "8793"))
+# Bind to loopback by default. LINES_HOST=0.0.0.0 puts it on the network so a phone can
+# reach it, and there is no authentication on this service: anyone who can route to the
+# port can read and edit every project in projects/. Use it on a network you trust.
+HOST = os.environ.get("LINES_HOST", "127.0.0.1")
 MAX_BODY = 40 * 1024 * 1024
 
 
@@ -248,6 +252,10 @@ class Handler(BaseHTTPRequestHandler):
 
 
 if __name__ == "__main__":
-    srv = ThreadingHTTPServer(("127.0.0.1", PORT), Handler)
-    print(f"menu lines sidecar on http://127.0.0.1:{PORT}/  (projects in {workspace.PROJECTS})")
+    srv = ThreadingHTTPServer((HOST, PORT), Handler)
+    print(f"menu lines sidecar on http://{HOST}:{PORT}/  (projects in {workspace.PROJECTS})")
+    if HOST not in ("127.0.0.1", "localhost"):
+        print("  on the network: no authentication, any device that can reach this port can")
+        print("  read and edit every project. Serve the page from the same machine and open")
+        print(f"  http://<this-machine's-ip>:{PORT}/health from the phone to confirm it answers.")
     srv.serve_forever()

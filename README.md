@@ -202,6 +202,49 @@ Raw pixel diff is *not* a gate: a browser and MuPDF disagree about antialiasing,
 half a pixel of rasterizer snapping shows up as a 30% pixel diff on 6 pt type. Judge
 placement per line, not per pixel.
 
+### On a phone
+
+The canvas is built for a touch screen of 390 px as much as a 1280 px laptop, and the
+layout is not a shrunken desktop:
+
+| At | Studio page | Editor bar | Editing a line |
+|---|---|---|---|
+| ≤900 px | one column: the sheet, then Blocks and Inspector as scrollable sections under it | five controls at 44 px (undo, redo, More, Export, Close); the other twelve in a sheet on the bottom edge, 48 px each | tap selects, a 44 px grip above the line moves it, two fingers pinch to zoom |
+| >900 px | three columns, unchanged | one dense toolbar (two wrapped rows at 1280) | the in-place field, as before |
+
+Editing goes through a bottom drawer on a small screen: a 16 px field (below 16 px iOS
+zooms the whole page on focus, and the keyboard would cover an in-place field that is
+8 px at fit-width), font/size/colour, and Done at 48 px. It drives the same editing
+state and the same 8% fit rule as the desktop field, so there is one commit path.
+
+A finger never drags a line directly — that gesture is scroll, and the browser cancels
+the pointer mid-move. It scrolls; a tap selects; the grip moves. `pointercancel` throws
+the in-flight move away instead of half-committing it.
+
+Serving it to a phone that is not this machine:
+
+    LINES_HOST=0.0.0.0 npm run canvas     # sidecar answers on the network
+    npm run serve:lan                     # static files too
+    http://<this-machine's-ip>:8791/      # open on the phone
+
+The page calls the sidecar on whatever host served it (`location.hostname`, port 8793),
+so nothing is hardcoded to localhost; `window.LINES_SERVICE` overrides it. The sidecar
+has **no authentication** — while it is bound to the network, anything that can route to
+the port can read and edit every project. Use it on a network you trust and bind it back
+to loopback afterwards. On ChromeOS the container's address is not on the Wi-Fi: forward
+ports 8791 and 8793 to Linux (Settings → Developers → Linux → Port forwarding) and use
+the Chromebook's own address.
+
+Verified at 390x844, 360x740, 768x1024 and 1280x800 with `npm run test:mobile` (66
+checks: no sideways scroll, 44 px targets, one bar row, the sheet on the bottom edge, a
+16 px focused drawer field, an edit that reaches the server, a grip that moves a line, a
+pinch that changes the zoom, and the desktop bar still one toolbar).
+
+Measured rather than assumed: mounting the 217-line page costs 104–193 ms on a desktop
+CPU, and a 40-frame grip drag runs at 16.7 ms median / 18.1 ms max — one frame each, no
+long frames — so the per-glyph renderer stays. A plate-raster mode is the fallback if a
+real phone measures worse.
+
 ### OCR engine choice, measured
 
 The first attempt used tesseract in the browser. Measured on your three menus,
@@ -344,6 +387,7 @@ Individually:
     node test/import-e2e.js        # paste -> blocks -> layout -> out/imported.pdf
     node test/fidelity.js          # demo menu -> out/menu.pdf
     python3 test/syntax.py         # inline script parses, ids and assets resolve
+    node test/mobile.js            # the app at 390x844, 360x740, 768x1024, 1280x800 (needs both servers)
     .../python -I test/verify.py [pdf] [displaylist.json]   # glyph-level PDF check
     .../python -I test/dump-fixtures.py <menu.png ...>      # regenerate design fixtures
 

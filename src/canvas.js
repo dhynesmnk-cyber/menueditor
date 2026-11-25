@@ -21,7 +21,11 @@
 (function (root) {
   'use strict';
 
-  var SERVICE = root.LINES_SERVICE || 'http://127.0.0.1:8793';
+  // Same origin as the page: on a phone the page is not at 127.0.0.1, so a hardcoded
+  // localhost sidecar would make the phone call itself. LINES_SERVICE still wins.
+  var SERVICE = root.LINES_SERVICE || (root.location && /^https?:/.test(root.location.protocol)
+    ? '//' + root.location.hostname + ':8793'
+    : 'http://127.0.0.1:8793');
   var Z = 2;                 // px per pt
   var STORE = 'menucanvas:';
 
@@ -120,7 +124,9 @@
       '.cv-grip{display:none;cursor:grab;touch-action:none}',
       '.cv-grip rect{fill:#2f6fed;stroke:#fff;stroke-width:.6}',
       '.cv-grip path{stroke:#fff;stroke-width:.8;stroke-linecap:round}',
-      '@media (max-width:720px){',
+      // Same breakpoint as the studio page: a 768px tablet in portrait is a touch screen,
+      // and it was getting the desktop bar (three wrapped rows) with none of the room.
+      '@media (max-width:900px){',
       '  .cv-bar{flex-wrap:nowrap;gap:6px;padding:max(6px,env(safe-area-inset-top)) 10px 6px}',
       '  .cv-bar [data-role=pname]{display:none}',
       '  .cv-bar [data-role=status]{flex:1 1 auto;min-width:0;font-size:12px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}',
@@ -167,7 +173,7 @@
       '.cv-drawer .dr-actions .dr-done{background:#2f6fed;border-color:#2f6fed;color:#fff;font-weight:600}',
       '.cv-drawer .dr-note{color:#667485;font-size:13px;margin-top:8px}',
       // the override has to come after the base rule: same specificity, later wins
-      '@media (max-width:720px){.cv-drawer{display:block}}',
+      '@media (max-width:900px){.cv-drawer{display:block}}',
       '@media (hover:none){.cv-img{opacity:1;outline:1px dashed rgba(47,111,237,.55);outline-offset:-1px}}'
     ].join('\n');
     var el = document.createElement('style');

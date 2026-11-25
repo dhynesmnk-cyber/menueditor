@@ -1259,7 +1259,9 @@ function applyDesign(t) {
    gets back line objects with the page's own glyph positions, and opens the
    overlay. Nothing here touches the model, the engine or the exporter. */
 (function () {
-  const SERVICE = window.LINES_SERVICE || 'http://127.0.0.1:8793';
+  const SERVICE = window.LINES_SERVICE ||
+    (/^https?:/.test(location.protocol) ? '//' + location.hostname + ':8793'
+                                        : 'http://127.0.0.1:8793');
   const btn = document.getElementById('canvasBtn');
   const file = document.getElementById('canvasFile');
   if (!btn || !file) return;

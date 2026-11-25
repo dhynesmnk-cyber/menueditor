@@ -16,7 +16,8 @@
 // no sideways scrolling, 44px targets, one bar row, a drawer you can type in, a grip
 // you can drag, and a pinch that zooms. The result is JSON in #report, so a headless
 // run can read it back with --dump-dom.
-const SERVICE = 'http://127.0.0.1:8793';
+const SERVICE = /^https?:/.test(location.protocol) ? '//' + location.hostname + ':8793'
+                                                    : 'http://127.0.0.1:8793';
 const out = { ok: true, sizes: [], timing: {}, checks: [] };
 
 function check(size, name, ok, detail) {
@@ -90,7 +91,7 @@ async function runSize(size, slug) {
   const barBtns = [...doc.querySelectorAll('.cv-bar button')]
     .filter(b => b.getBoundingClientRect().width > 0 && getComputedStyle(b).display !== 'none');
   const small = barBtns.filter(b => b.getBoundingClientRect().height < 44).map(b => b.textContent.trim());
-  if (w <= 720) {
+  if (w <= 900) {
     check(tag, 'bar: one row', bar.height <= 72, Math.round(bar.height));
     check(tag, 'bar: every target >= 44px', small.length === 0, small.join(','));
   }
@@ -98,14 +99,27 @@ async function runSize(size, slug) {
   // ---- the sheet ------------------------------------------------------
   const more = doc.querySelector('[data-role=more]');
   const menu = doc.querySelector('[data-role=menu]');
-  check(tag, 'bar: More exists on a phone', w > 720 || getComputedStyle(more).display !== 'none');
+  const moreShown = getComputedStyle(more).display !== 'none';
+  if (w > 900) {
+    // the desktop bar is the sheet, opened up: no More, secondary controls inline
+    check(tag, 'desktop: no More button', !moreShown);
+    const undo = doc.querySelector('[data-role=undo]').getBoundingClientRect();
+    check(tag, 'desktop: undo sits in the bar', undo.width > 0 && undo.top < 60,
+          Math.round(undo.width) + 'px at y' + Math.round(undo.top));
+    // a dense toolbar: two rows at 1280 is the long-standing shape, three is a blowout
+    check(tag, 'desktop: the bar stays at two rows', bar.height <= 92, Math.round(bar.height));
+    check(tag, 'desktop: every line still paints', lines.length === j.lines.pages[0].objects.length,
+          lines.length);
+  } else {
+    check(tag, 'bar: More opens the sheet', moreShown);
+  }
   more.click();
   await sleep(300);
   const menuOpen = menu.classList.contains('on');
   const mRect = menu.getBoundingClientRect();
   const menuSmall = [...menu.querySelectorAll('button')]
     .filter(b => b.getBoundingClientRect().height < 44).map(b => b.textContent.trim());
-  if (w <= 720) {
+  if (w <= 900) {
     check(tag, 'sheet: opens from More', menuOpen);
     check(tag, 'sheet: sits on the bottom edge', Math.abs(mRect.bottom - win.innerHeight) < 2,
           Math.round(mRect.bottom) + ' vs ' + win.innerHeight);
@@ -199,7 +213,7 @@ async function runSize(size, slug) {
   try {
     const slug = new URLSearchParams(location.search).get('slug');
     if (!slug) throw new Error('no slug');
-    const sizes = [{ w: 390, h: 844 }, { w: 360, h: 740 }, { w: 768, h: 1024 }];
+    const sizes = [{ w: 390, h: 844 }, { w: 360, h: 740 }, { w: 768, h: 1024 }, { w: 1280, h: 800 }];
     for (const s of sizes) await runSize(s, slug);
   } catch (e) {
     out.ok = false;

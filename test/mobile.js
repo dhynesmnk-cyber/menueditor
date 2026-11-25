@@ -13,7 +13,7 @@ const os = require('os');
 const path = require('path');
 
 const ROOT = path.resolve(__dirname, '..');
-const SERVICE = process.env.LINES_URL || 'http://127.0.0.1:8793';
+const SERVICE = process.env.LINES_URL || process.env.SERVICE_URL || 'http://127.0.0.1:8793';
 const STATIC = process.env.STATIC_URL || 'http://127.0.0.1:8791';
 const ELA = process.env.ELA_PDF || path.join(os.homedir(), 'ela-menu', 'ela-a4-final-A.pdf');
 const CHROME = process.env.CHROME_BIN || 'google-chrome';
