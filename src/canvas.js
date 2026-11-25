@@ -290,8 +290,11 @@
 
     if (data.warnings && data.warnings.length) {
       warnEl.style.display = '';
-      warnEl.textContent = 'Some fonts could not be resolved, so those lines preview in a fallback ' +
-        'face (the export still embeds the original): ' + data.warnings.join(', ');
+      // Say what will actually happen: the export refuses an edit it cannot set in the real
+      // face. Claiming it embeds the original was untrue, and a substitute face on one line is
+      // exactly what a designer notices first.
+      warnEl.textContent = 'These faces are not installed, so the preview stands in for them and ' +
+        'export will refuse to re-set those lines until you add them: ' + data.warnings.join(', ');
     } else {
       warnEl.style.display = 'none';
     }

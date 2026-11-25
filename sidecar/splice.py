@@ -23,12 +23,15 @@ not fit its slot is shrunk by at most 8%, or refused. A payload from a stale cli
 must not be able to corrupt the file. Added boxes are exempt from the slot check —
 there is no slot — but their font must resolve or the box is refused.
 """
+import os
+import re
+import tempfile
+
 import pymupdf
 
 from grouping import _face, extract, resolve_font_path
 
 MIN_FIT = 0.92
-
 
 def _int(v):
     try:
@@ -241,7 +244,13 @@ def build(doc_bytes, edits=None, images=None, adds=None, deletes=None, font_path
         if text == o["text"] and not moved and not retracked and not resized and not restyled:
             continue
 
-        font = _face(doc, family)
+        face_path = font_paths.get(family) or resolve_font_path(family)
+        if not face_path:
+            refused.append({"gi": o["gi"], "reason": "font not installed: %s" % family,
+                            "text": o["text"][:40]})
+            continue
+
+        font = _open_font(face_path) or _face(doc, family)
         limit = float(o.get("max_width") or o["ink_width"])
         w = _width_of(font, text, size, track)
         if w > limit:
@@ -330,11 +339,12 @@ def build(doc_bytes, edits=None, images=None, adds=None, deletes=None, font_path
             return names[key]
         path = font_paths.get(family) or resolve_font_path(family)
         name = "X%d" % len(names)
-        if path:
-            doc[pno].insert_font(fontname=name, fontfile=path)
-            names[key] = (name, _open_font(path))
-        else:
-            names[key] = ("helv", _face(doc, family))
+        if not path:
+            # Unreachable for edits (they are refused above) and for adds (likewise). Kept as an
+            # exception rather than a substitution so no future path can quietly draw Helvetica.
+            raise RuntimeError("font not installed: %s" % family)
+        doc[pno].insert_font(fontname=name, fontfile=path)
+        names[key] = (name, _open_font(path))
         return names[key]
 
     def draw(pno, text, x, y, size, track, family, color):
