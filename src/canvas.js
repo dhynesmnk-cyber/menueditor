@@ -127,9 +127,11 @@
       // Same breakpoint as the studio page: a 768px tablet in portrait is a touch screen,
       // and it was getting the desktop bar (three wrapped rows) with none of the room.
       '@media (max-width:900px){',
-      '  .cv-bar{flex-wrap:nowrap;gap:6px;padding:max(6px,env(safe-area-inset-top)) 10px 6px}',
+      '  .cv-bar{flex-wrap:nowrap;gap:6px;padding:max(6px,env(safe-area-inset-top)) 10px 6px;overflow:hidden}',
+      // the buttons keep their size; the status is what gives way, or Export loses its label
+      '  .cv-bar .cv-btn,.cv-bar .cv-more{flex:0 0 auto}',
       '  .cv-bar [data-role=pname]{display:none}',
-      '  .cv-bar [data-role=status]{flex:1 1 auto;min-width:0;font-size:12px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}',
+      '  .cv-bar [data-role=status]{flex:1 1 0;min-width:0;font-size:12px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}',
       '  .cv-bar [data-role=export]{white-space:nowrap;padding:0 12px}',
       '  .pdfw{display:none}',
       '  .cv-bar .hint{display:none}',
@@ -156,12 +158,14 @@
       '  .cv-panel .row span{font-size:12px}',
       '}',
       '.cv-drawer{display:none;position:fixed;left:0;right:0;bottom:0;z-index:97;background:#fff;',
-      '  border-top:1px solid #dbe2ec;box-shadow:0 -14px 40px rgba(16,32,64,.22);',
+      '  overflow-y:auto;border-top:1px solid #dbe2ec;box-shadow:0 -14px 40px rgba(16,32,64,.22);',
       '  padding:12px 12px max(12px,env(safe-area-inset-bottom));font:14px/1.35 system-ui,sans-serif}',
       '.cv-drawer .dr-head{display:flex;align-items:center;gap:8px;margin-bottom:8px}',
       '.cv-drawer .dr-head b{flex:1;font-weight:600;font-size:14px}',
       '.cv-drawer .dr-x{background:none;border:0;font-size:20px;line-height:1;padding:6px 10px;cursor:pointer;min-width:44px;min-height:44px}',
       '.cv-drawer input.dr-text{width:100%;font-size:16px;padding:11px 12px;border:1px solid #c9d2e0;border-radius:8px}',
+      '.cv-drawer .dr-fit{font-size:13px;color:#4b5a6b;margin-top:6px;min-height:18px}',
+      '.cv-drawer .dr-fit.bad{color:#b3261e;font-weight:600}',
       '.cv-drawer .dr-row{display:flex;gap:8px;align-items:center;margin-top:8px;flex-wrap:wrap}',
       '.cv-drawer .dr-row label{color:#667485;font-size:13px}',
       '.cv-drawer .dr-row select,.cv-drawer .dr-row input[type=number]{font-size:16px;min-height:42px;padding:6px 8px;',
@@ -204,25 +208,25 @@
       '  <span class="cv-status" data-role="status">no edits</span>' +
       '  <span class="cv-status" data-role="locknote" style="display:none"></span>' +
       '  <span class="sp"></span>' +
-      '  <button class="cv-btn" data-role="undo" title="undo (⌘Z)">↶</button>' +
-      '  <button class="cv-btn" data-role="redo" title="redo (⇧⌘Z)">↷</button>' +
+      '  <button class="cv-btn" data-role="undo" aria-label="undo" title="undo (⌘Z)">↶</button>' +
+      '  <button class="cv-btn" data-role="redo" aria-label="redo" title="redo (⇧⌘Z)">↷</button>' +
       '  <div class="cv-menu" data-role="menu">' +
       '    <button class="cv-btn" data-role="addtext" title="add a text box (T)">＋ Text</button>' +
       '    <button class="cv-btn" data-role="delete" title="delete the selected line (Del)">Delete</button>' +
       '    <button class="cv-btn" data-role="fonts" title="load a font file into this project">Fonts</button>' +
       '    <button class="cv-btn" data-role="reimport" title="replace the source PDF with a revised one; your changes are carried over">↻ New PDF</button>' +
       '    <span class="cv-pgctl">' +
-      '      <button class="cv-btn" data-role="pgprev" title="show the previous page">‹</button>' +
+      '      <button class="cv-btn" data-role="pgprev" aria-label="previous page" title="show the previous page">‹</button>' +
       '      <button class="cv-btn" data-role="pglabel" title="the page these buttons act on">1 / 1</button>' +
-      '      <button class="cv-btn" data-role="pgnext" title="show the next page">›</button>' +
+      '      <button class="cv-btn" data-role="pgnext" aria-label="next page" title="show the next page">›</button>' +
       '      <button class="cv-btn" data-role="pgdup" title="copy this sheet: its art stays, its lines become editable">Duplicate</button>' +
       '      <button class="cv-btn" data-role="pgadd" title="add a blank page">+ Page</button>' +
       '      <button class="cv-btn" data-role="pgdel" title="delete this page">Delete page</button>' +
       '    </span>' +
       '    <span class="cv-zoom">' +
-      '      <button class="cv-btn" data-role="zout" title="zoom out">−</button>' +
-      '      <button class="cv-btn" data-role="zlabel" title="fit width → fit page → 100%">100%</button>' +
-      '      <button class="cv-btn" data-role="zin" title="zoom in">+</button>' +
+      '      <button class="cv-btn" data-role="zout" aria-label="zoom out" title="zoom out">−</button>' +
+      '      <button class="cv-btn" data-role="zlabel" aria-label="zoom level: fit width, fit page or 100%" title="fit width → fit page → 100%">100%</button>' +
+      '      <button class="cv-btn" data-role="zin" aria-label="zoom in" title="zoom in">+</button>' +
       '    </span>' +
       '    <button class="cv-btn" data-role="projects">Projects</button>' +
       '    <button class="cv-btn" data-role="clear">Clear</button>' +
@@ -1255,11 +1259,44 @@
       var d = document.createElement('div');
       d.className = 'cv-drawer';
       d.setAttribute('data-role', 'drawer');
+      d.setAttribute('role', 'dialog');
       d.innerHTML = '<div class="dr-head"><b>' + esc(title) + '</b>' +
         '<button class="dr-x" type="button" aria-label="close">×</button></div>' + body;
       overlay.appendChild(d);
       d.querySelector('.dr-x').onclick = function () { cancelEdit(); };
+      dockDrawer(d);
       return d;
+    }
+
+    // A fixed panel sits on the layout viewport's bottom edge, which on a phone with the
+    // keyboard up is *behind* the keyboard. visualViewport is the only thing that knows how
+    // much of the page is actually visible, so the drawer rides above it.
+    var drawerWatch = null;
+    function dockDrawer(d) {
+      var vv = root.visualViewport;
+      function place() {
+        var now = root.visualViewport || vv;      // re-read: a test and some shells swap it
+        var bottom = now ? Math.max(0, root.innerHeight - now.height - (now.offsetTop || 0)) : 0;
+        d.style.bottom = bottom > 1 ? bottom + 'px' : '';
+        if (now) d.style.maxHeight = Math.max(200, now.height - 12) + 'px';
+      }
+      place();
+      if (vv && vv.addEventListener) {
+        vv.addEventListener('resize', place);
+        vv.addEventListener('scroll', place);
+      }
+      if (drawerWatch) drawerWatch();
+      drawerWatch = function () {
+        if (vv && vv.removeEventListener) {
+          vv.removeEventListener('resize', place);
+          vv.removeEventListener('scroll', place);
+        }
+        drawerWatch = null;
+      };
+    }
+    function undockDrawer(d) {
+      if (drawerWatch) drawerWatch();
+      if (d) d.remove();
     }
 
     function styleControls(v, restyle) {
@@ -1280,6 +1317,7 @@
       var d = drawerShell('Edit line',
         '<input class="dr-text" value="' + esc(v.text) + '" autocapitalize="sentences" ' +
         'autocorrect="off" spellcheck="false">' +
+        '<div class="dr-fit" aria-live="polite"></div>' +
         styleControls(v, restyle) +
         '<div class="dr-actions"><button class="dr-cancel" type="button">Cancel</button>' +
         '<button class="dr-done" type="button">Done</button></div>');
@@ -1403,6 +1441,17 @@
       editing.sizeUsed = res.size;
       setLive(editing.g, editing.inp.value, res.size, res.track, editing.font, editing.color);
       editing.inp.classList.toggle('toowide', !res.fits);
+      // the same verdict, said where the thumb is: the bar's status line is 600px away
+      // on a phone and behind the keyboard while the drawer has focus
+      var fitEl = editing.drawer && editing.drawer.querySelector('.dr-fit');
+      if (fitEl) {
+        fitEl.classList.toggle('bad', !res.fits);
+        fitEl.textContent = !res.fits
+          ? 'too long by ' + (res.w - res.max).toFixed(0) + ' pt — Done will refuse it'
+          : (res.size < editing.size - 0.01
+              ? 'fitted ' + Math.round(100 * res.size / editing.size) + '% to fit the slot'
+              : 'fits the slot (' + res.w.toFixed(0) + ' of ' + res.max.toFixed(0) + ' pt)');
+      }
       if (!res.fits) {
         status('too long — needs ' + res.w.toFixed(0) + 'pt, slot is ' + res.max.toFixed(0) +
                'pt (Shift+Enter to squeeze)');
@@ -1426,7 +1475,7 @@
       var e = editing;
       editing = null;
       e.inp.remove();
-      if (e.drawer) e.drawer.remove();
+      if (e.drawer) undockDrawer(e.drawer);
       hideGrip();
       trkEl.classList.remove('on');
       styleRow.classList.remove('on');
@@ -1451,7 +1500,7 @@
         var ea = editing;
         editing = null;
         ea.inp.remove();
-        if (ea.drawer) ea.drawer.remove();
+        if (ea.drawer) undockDrawer(ea.drawer);
         ea.add.text = ea.orig;
         renderAdd(ea.add);
         selectAdd(ea.add);
@@ -1460,7 +1509,7 @@
       var e = editing;
       editing = null;
       e.inp.remove();
-      if (e.drawer) e.drawer.remove();
+      if (e.drawer) undockDrawer(e.drawer);
       trkEl.classList.remove('on');
       styleRow.classList.remove('on');
       if (e.g) e.g.classList.remove('sel');

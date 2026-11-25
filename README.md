@@ -217,6 +217,13 @@ zooms the whole page on focus, and the keyboard would cover an in-place field th
 8 px at fit-width), font/size/colour, and Done at 48 px. It drives the same editing
 state and the same 8% fit rule as the desktop field, so there is one commit path.
 
+The drawer carries the verdict the bar's status line is too far away to give: *fits the
+slot (160 of 168 pt)*, *fitted 94% to fit the slot*, or *too long by 100 pt — Done will
+refuse it* in red, announced with `aria-live`. And because a fixed panel sits on the
+layout viewport's bottom edge — behind the keyboard on a phone — the drawer docks to
+`visualViewport`, rising by `innerHeight - height - offsetTop` and capping its own height
+to the visible area (scrolling inside when the keyboard leaves less room than it needs).
+
 A finger never drags a line directly — that gesture is scroll, and the browser cancels
 the pointer mid-move. It scrolls; a tap selects; the grip moves. `pointercancel` throws
 the in-flight move away instead of half-committing it.
@@ -235,10 +242,12 @@ to loopback afterwards. On ChromeOS the container's address is not on the Wi-Fi:
 ports 8791 and 8793 to Linux (Settings → Developers → Linux → Port forwarding) and use
 the Chromebook's own address.
 
-Verified at 390x844, 360x740, 768x1024 and 1280x800 with `npm run test:mobile` (66
-checks: no sideways scroll, 44 px targets, one bar row, the sheet on the bottom edge, a
-16 px focused drawer field, an edit that reaches the server, a grip that moves a line, a
-pinch that changes the zoom, and the desktop bar still one toolbar).
+Verified at 390x844, 360x740, 768x1024 and 1280x800 with `npm run test:mobile` (83
+checks: no sideways scroll, 44 px targets, one bar row, no clipped labels, every button
+named, the sheet on the bottom edge, a 16 px focused drawer field that says when the text
+is too long, a drawer that rides above a stubbed keyboard and comes back down, an edit
+that reaches the server, a grip that moves a line, a pinch that changes the zoom, and the
+desktop bar still one toolbar).
 
 Measured rather than assumed: mounting the 217-line page costs 104–193 ms on a desktop
 CPU, and a 40-frame grip drag runs at 16.7 ms median / 18.1 ms max — one frame each, no

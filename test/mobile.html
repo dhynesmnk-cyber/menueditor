@@ -61,6 +61,11 @@ async function runSize(size, slug) {
   const win = fr.contentWindow, doc = fr.contentDocument;
   await sleep(1200);
 
+  // Stand in for the visual viewport before anything docks to it: on a phone the keyboard
+  // shrinks this, it does not fire a window resize, and it is how the drawer knows.
+  const fakeVV = Object.assign(new win.EventTarget(), { height: win.innerHeight, offsetTop: 0, width: w });
+  Object.defineProperty(win, 'visualViewport', { value: fakeVV, configurable: true });
+
   // ---- the studio page ------------------------------------------------
   const de = doc.documentElement;
   check(tag, 'studio: no sideways scroll', de.scrollWidth <= win.innerWidth + 1,
@@ -94,6 +99,17 @@ async function runSize(size, slug) {
   if (w <= 900) {
     check(tag, 'bar: one row', bar.height <= 72, Math.round(bar.height));
     check(tag, 'bar: every target >= 44px', small.length === 0, small.join(','));
+    // a long status line must not squeeze Export into "Expo"
+    const clipped = barBtns.filter(b => b.scrollWidth > b.clientWidth + 1)
+      .map(b => b.textContent.trim() + ' ' + b.scrollWidth + '>' + b.clientWidth);
+    check(tag, 'bar: no button label is clipped', clipped.length === 0, clipped.join(', '));
+    check(tag, 'bar: the buttons stay inside the bar',
+          barBtns.every(b => b.getBoundingClientRect().right <= win.innerWidth + 1));
+    // an icon-only button has to say what it does; "↶" reads as an arrow, not undo
+    const unnamed = barBtns
+      .filter(b => !(b.getAttribute('aria-label') || b.textContent.trim()))
+      .map(b => b.outerHTML.slice(0, 40));
+    check(tag, 'bar: every button has a name', unnamed.length === 0, unnamed.join(' '));
   }
 
   // ---- the sheet ------------------------------------------------------
@@ -146,7 +162,34 @@ async function runSize(size, slug) {
       const done = drawer.querySelector('.dr-done');
       check(tag, 'drawer: Done is >= 44px', done.getBoundingClientRect().height >= 44,
             Math.round(done.getBoundingClientRect().height));
-      inp.value = inp.value.replace(/[\d.]+$/, '') + '991';
+      // the fit verdict has to be in the drawer, not only in the bar 600px away
+      inp.value = 'X'.repeat(60);
+      inp.dispatchEvent(new win.Event('input', { bubbles: true }));
+      await sleep(120);
+      const fit = drawer.querySelector('.dr-fit');
+      check(tag, 'drawer: a too-long title says so before Done',
+            !!fit && /too long/.test(fit.textContent) && fit.classList.contains('bad'),
+            fit && fit.textContent);
+      check(tag, 'drawer: the too-long preview is marked on the page',
+            target.querySelector('.live').classList.contains('toowide') ||
+            inp.classList.contains('toowide'));
+
+      // a keyboard is a visual viewport change, not a window resize
+      fakeVV.height = 380;
+      fakeVV.dispatchEvent(new win.Event('resize'));
+      await sleep(120);
+      const lifted = drawer.getBoundingClientRect();
+      check(tag, 'drawer: rides above the keyboard',
+            Math.abs(lifted.bottom - fakeVV.height) < 2,
+            'bottom at y' + Math.round(lifted.bottom) + ', keyboard starts at 380');
+      fakeVV.height = win.innerHeight;
+      fakeVV.dispatchEvent(new win.Event('resize'));
+      await sleep(120);
+      const dropped = drawer.getBoundingClientRect();
+      check(tag, 'drawer: comes back down when the keyboard goes',
+            Math.abs(dropped.bottom - win.innerHeight) < 2, Math.round(dropped.bottom));
+
+      inp.value = 'PANIPURI 991';       // short enough that Done must accept it
       inp.dispatchEvent(new win.Event('input', { bubbles: true }));
       const live = target.querySelector('.live').textContent;
       check(tag, 'drawer: typing previews on the page', live === inp.value, live);
