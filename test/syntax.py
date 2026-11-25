@@ -45,8 +45,11 @@ else:
 assets = set(re.findall(r'(?:src|href)="((?!http)[^"]+)"', html))
 assets |= set(re.findall(r"url\('([^']+)'\)", html))
 assets |= set(re.findall(r"fetch\('([^']+)'", src))
+# a cache-busting query is part of the reference, not of the filename: ?v=201 still means
+# src/canvas.js, and the file has to exist for it to be worth busting
 missing_assets = sorted(
-    a for a in assets if not a.startswith("data:") and not (ROOT / a).exists()
+    a for a in assets
+    if not a.startswith("data:") and not (ROOT / a.split("?")[0].split("#")[0]).exists()
 )
 if missing_assets:
     fails.append("missing assets: " + ", ".join(missing_assets))

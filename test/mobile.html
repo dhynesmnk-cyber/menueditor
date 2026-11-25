@@ -116,19 +116,32 @@ async function runSize(size, slug) {
   }
 
   // ---- the sheet ------------------------------------------------------
+  // Nineteen controls need about 1700px; below that the bar hands the rest to the sheet, on a
+  // phone and on a narrow desktop window alike.
   const more = doc.querySelector('[data-role=more]');
   const menu = doc.querySelector('[data-role=menu]');
   const moreShown = getComputedStyle(more).display !== 'none';
-  if (w > 900) {
-    // the desktop bar is the sheet, opened up: no More, secondary controls inline
-    check(tag, 'desktop: no More button', !moreShown);
-    const undo = doc.querySelector('[data-role=undo]').getBoundingClientRect();
-    check(tag, 'desktop: undo sits in the bar', undo.width > 0 && undo.top < 60,
-          Math.round(undo.width) + 'px at y' + Math.round(undo.top));
-    // a dense toolbar: two rows at 1280 is the long-standing shape, three is a blowout
-    check(tag, 'desktop: the bar stays at two rows', bar.height <= 92, Math.round(bar.height));
-    check(tag, 'desktop: every line still paints', lines.length === j.lines.pages[0].objects.length,
+  const overflow = w < 1760;
+  const undoBtn = doc.querySelector('[data-role=undo]').getBoundingClientRect();
+  const oneRowOfControls = () => {
+    const tops = barBtns.map(b => Math.round(b.getBoundingClientRect().top));
+    return Math.max.apply(null, tops) - Math.min.apply(null, tops) <= 2;
+  };
+  if (w > 900 && !overflow) {
+    check(tag, 'wide: the whole toolbar is inline, no More', !moreShown);
+    check(tag, 'wide: undo sits in the bar', undoBtn.width > 0 && undoBtn.top < 60,
+          Math.round(undoBtn.width) + 'px at y' + Math.round(undoBtn.top));
+    check(tag, 'wide: one row of controls', oneRowOfControls(),
+          Math.round(bar.height) + 'px tall');
+    check(tag, 'wide: every line still paints', lines.length === j.lines.pages[0].objects.length,
           lines.length);
+  } else if (w > 900) {
+    check(tag, 'narrow desktop: the bar uses More', moreShown);
+    check(tag, 'narrow desktop: one row of controls', oneRowOfControls(),
+          Math.round(bar.height) + 'px tall');
+    const clippedD = barBtns.filter(b => b.scrollWidth > b.clientWidth + 1)
+      .map(b => b.textContent.trim());
+    check(tag, 'narrow desktop: no label is clipped', clippedD.length === 0, clippedD.join(','));
   } else {
     check(tag, 'bar: More opens the sheet', moreShown);
   }
@@ -138,7 +151,7 @@ async function runSize(size, slug) {
   const mRect = menu.getBoundingClientRect();
   const menuSmall = [...menu.querySelectorAll('button')]
     .filter(b => b.getBoundingClientRect().height < 44).map(b => b.textContent.trim());
-  if (w <= 900) {
+  if (overflow) {
     check(tag, 'sheet: opens from More', menuOpen);
     check(tag, 'sheet: sits on the bottom edge', Math.abs(mRect.bottom - win.innerHeight) < 2,
           Math.round(mRect.bottom) + ' vs ' + win.innerHeight);
@@ -291,6 +304,28 @@ async function runSize(size, slug) {
     }
   }
 
+  // ---- the keyboard can place a line too ------------------------------
+  const kl = doc.querySelectorAll('.cv-line')[9];
+  const kr = kl.querySelector('.hit').getBoundingClientRect();
+  kl.dispatchEvent(new win.PointerEvent('pointerdown', {bubbles: true, cancelable: true,
+    pointerType: 'mouse', pointerId: 51, isPrimary: true,
+    clientX: kr.left + 5, clientY: kr.top + kr.height / 2}));
+  kl.dispatchEvent(new win.PointerEvent('pointerup', {bubbles: true, cancelable: true,
+    pointerType: 'mouse', pointerId: 51, isPrimary: true,
+    clientX: kr.left + 5, clientY: kr.top + kr.height / 2}));
+  kl.dispatchEvent(new win.MouseEvent('click', {bubbles: true, clientX: kr.left + 5,
+    clientY: kr.top + kr.height / 2}));
+  await sleep(250);
+  // close the editor (drawer or in-place field) but keep the selection: arrows act on it
+  win.document.dispatchEvent(new win.KeyboardEvent('keydown', {key: 'Escape', bubbles: true}));
+  await sleep(250);
+  const k0 = kl.getAttribute('transform');
+  win.document.dispatchEvent(new win.KeyboardEvent('keydown', {key: 'ArrowRight', bubbles: true}));
+  await sleep(200);
+  const k1 = kl.getAttribute('transform');
+  check(tag, 'keyboard: an arrow key moves the selected line by a point',
+        !!k1 && k1 !== (k0 || ''), (k0 || 'none') + ' -> ' + (k1 || 'none'));
+
   // ---- pinch ----------------------------------------------------------
   const svg = doc.querySelector('.cv-stage svg');
   const zoom0 = doc.querySelector('[data-role=zlabel]').textContent;
@@ -318,7 +353,8 @@ async function runSize(size, slug) {
   try {
     const slug = new URLSearchParams(location.search).get('slug');
     if (!slug) throw new Error('no slug');
-    const sizes = [{ w: 390, h: 844 }, { w: 360, h: 740 }, { w: 768, h: 1024 }, { w: 1280, h: 800 }];
+    const sizes = [{ w: 390, h: 844 }, { w: 360, h: 740 }, { w: 768, h: 1024 }, { w: 1280, h: 800 },
+                   { w: 1920, h: 1080 }];
     for (const s of sizes) await runSize(s, slug);
   } catch (e) {
     out.ok = false;

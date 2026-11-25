@@ -120,6 +120,21 @@
       // bottom, where a thumb already is.
       '.cv-menu{display:contents}',
       '.cv-more{display:none;white-space:nowrap}',
+      // The sheet, in one place. It is a phone sheet and also the overflow for a narrow
+      // desktop window, where nineteen controls do not fit in one row (they need ~1700px).
+      '.cv-menu.on{position:fixed;left:0;right:0;bottom:0;z-index:96;display:flex;flex-wrap:wrap;gap:8px;',
+      '  padding:14px 12px max(14px,env(safe-area-inset-bottom));background:#fff;',
+      '  border-top:1px solid #dbe2ec;box-shadow:0 -12px 34px rgba(16,32,64,.18)}',
+      '.cv-menu.on .cv-btn{flex:1 1 44%;justify-content:center;min-height:48px;font-size:15px;',
+      '  white-space:nowrap;overflow:hidden}',
+      '.cv-menu.on .cv-pgctl,.cv-menu.on .cv-zoom{display:flex;flex:1 1 100%;flex-wrap:wrap;gap:8px;padding:0;border:0}',
+      '.cv-menu.on .cv-pgctl .cv-btn{flex:1 1 30%;min-width:0;min-height:48px}',
+      '.cv-menu.on .cv-zoom .cv-btn{flex:1 1 0;min-width:0;min-height:48px}',
+      // below the width the whole toolbar needs, the bar shows More and the sheet holds the rest
+      '@media (min-width:901px) and (max-width:1759px){',
+      '  .cv-more{display:inline-flex;align-items:center}',
+      '  .cv-menu{display:none}',
+      '}',
       '.cv-btn{touch-action:manipulation;-webkit-tap-highlight-color:transparent}',
       '.cv-stage svg{touch-action:pan-x pan-y}',
       '.cv-line rect.hit,.cv-add rect.hit{touch-action:none}',
@@ -143,14 +158,8 @@
       '  .cv-bar .hint{display:none}',
       '  .cv-btn{min-height:44px;min-width:44px;padding:0 12px;font-size:15px}',
       '  .cv-more{display:inline-flex;align-items:center}',
-      '  .cv-menu{position:fixed;left:0;right:0;bottom:0;z-index:96;display:none;flex-wrap:wrap;gap:8px;',
-      '    padding:14px 12px max(14px,env(safe-area-inset-bottom));background:#fff;',
-      '    border-top:1px solid #dbe2ec;box-shadow:0 -12px 34px rgba(16,32,64,.18)}',
-      '  .cv-menu.on{display:flex}',
-      '  .cv-menu .cv-btn{flex:1 1 44%;justify-content:center;min-height:48px;font-size:15px;white-space:nowrap;overflow:hidden}',
-      '  .cv-menu .cv-pgctl,.cv-menu .cv-zoom{display:flex;flex:1 1 100%;flex-wrap:wrap;gap:8px;padding:0;border:0}',
-      '  .cv-menu .cv-pgctl .cv-btn{flex:1 1 30%;min-width:0;min-height:48px}',
-      '  .cv-menu .cv-zoom .cv-btn{flex:1 1 0;min-width:0;min-height:48px}',
+      // the phone bar is five controls: the other twelve live in the sheet, opened by More
+      '  .cv-menu{display:none}',
       '  .cv-style{padding:10px 12px;gap:10px;position:sticky;top:0;z-index:2}',
       '  .cv-style label{font-size:13px}',
       '  .cv-style select,.cv-style input[type=number]{min-height:42px;font-size:16px}',
@@ -1622,18 +1631,17 @@
     // A finger cannot place a line to the point: at fit-width on a phone the scale is about
     // 0.3, so one point is a third of a pixel. The drawer steps the selected line by a point,
     // through the same clash guard a drag uses, and says where it landed.
-    function moveSelected(dx, dy) {
-      if (!editing || editing.kind !== 'line') return 'nothing selected';
-      var i = editing.i;
+    function moveLine(i, dx, dy, font, sizeUsed, pendingText, track) {
+      if (i === null || i === undefined || !objects[i]) return 'nothing selected';
       if (isLocked(i)) { status('that line is locked by the designer'); return 'locked'; }
       var o = objects[i], v = root.MenuLines.effective(objects, edits, i);
       var view = null;
       for (var k = 0; k < views.length; k++) if (views[k].index === o.page) view = views[k];
       if (!view) { status('that page is not on screen'); return 'no view'; }
-      var size = editing.sizeUsed || v.size;
-      var meas = measureFor(i, editing.font);
-      var w = editing.inp ? (meas(editing.inp.value, size, editing.track) || widthOfEdit(i))
-                          : widthOfEdit(i);
+      var size = sizeUsed || v.size;
+      var meas = measureFor(i, font);
+      var w = pendingText !== undefined
+        ? (meas(pendingText, size, track) || widthOfEdit(i)) : widthOfEdit(i);
       var nx = Math.round((v.x + dx) * 1000) / 1000;
       var ny = Math.round((v.y + dy) * 1000) / 1000;
       var why = root.MenuLines.dropClash({ objects: objects, vectors: view.vectors,
@@ -1641,10 +1649,16 @@
         widthOf: widthOfEdit });
       if (why) { status('cannot move: ' + why); return why; }
       setEdit(i, { x: nx, y: ny }, 'nudge:' + i);
-      applyLive();          // the pending text only lived in the field; redraw it in place
-      var pos = editing.drawer && editing.drawer.querySelector('.dr-pos');
+      if (editing && editing.i === i) applyLive();   // the pending text lived in the field
+      var pos = editing && editing.drawer && editing.drawer.querySelector('.dr-pos');
       if (pos) pos.textContent = nx.toFixed(1) + ', ' + ny.toFixed(1) + ' pt';
       return null;
+    }
+
+    function moveSelected(dx, dy) {
+      if (!editing || editing.kind !== 'line') return 'nothing selected';
+      return moveLine(editing.i, dx, dy, editing.font, editing.sizeUsed,
+                      editing.inp ? editing.inp.value : undefined, editing.track);
     }
 
     function pinchState() {
@@ -2072,11 +2086,59 @@
         addText();
         return;
       }
+      if (!editing && !inField && selLine !== null &&
+          /^(ArrowLeft|ArrowRight|ArrowUp|ArrowDown)$/.test(ev.key)) {
+        var step = (ev.shiftKey ? 10 : 1) *
+          (ev.key === 'ArrowLeft' || ev.key === 'ArrowUp' ? -1 : 1);
+        var dx = /Left|Right/.test(ev.key) ? step : 0;
+        var dy = dx ? 0 : step;
+        ev.preventDefault();
+        moveLine(selLine, dx, dy);
+        hideGrip();
+        return;
+      }
       if (!editing && ev.key === 'b') {
         views.forEach(function (v) { v.stage.classList.toggle('cv-boxes'); });
       }
     };
     document.addEventListener('keydown', api._keyHandler);
+
+    // Wait for the file the server is already writing. Returns true when the client has it.
+    async function adoptFinishedExport(startedAt) {
+      var deadline = Date.now() + 120000;
+      while (Date.now() < deadline) {
+        await new Promise(function (r) { setTimeout(r, 3000); });
+        var list;
+        try {
+          var r2 = await fetch(SERVICE + '/projects/' + encodeURIComponent(project.slug) + '/exports');
+          if (!r2.ok) continue;
+          list = (await r2.json()).exports || [];
+        } catch (e) { continue; }
+        var fresh = list.filter(function (e) { return e.mtime * 1000 > startedAt - 2000; })[0];
+        if (!fresh) continue;
+        status('the export finished while the page was away — fetching ' + fresh.name);
+        try {
+          await fetch(SERVICE + '/projects/' + encodeURIComponent(project.slug) +
+                      '/exports/' + encodeURIComponent(fresh.name)).then(function (r) { return r.blob(); })
+            .then(function (blob) {
+              if (/iPad|iPhone|iPod/.test(navigator.userAgent)) {
+                window.location.href = SERVICE + '/projects/' + encodeURIComponent(project.slug) +
+                  '/exports/' + encodeURIComponent(fresh.name);
+                return;
+              }
+              var a = document.createElement('a');
+              a.href = URL.createObjectURL(blob);
+              a.download = fresh.name;
+              document.body.appendChild(a);
+              a.click();
+              a.remove();
+            });
+        } catch (e) { continue; }
+        status('exported ' + fresh.name + ' · ' + Math.round(fresh.bytes / 1024) + 'K (recovered)');
+        return true;
+      }
+      return false;
+    }
 
     async function exportPdf() {
       if (!edits.size && !imageEdits.size && !adds.length && !deletes.size &&
@@ -2111,9 +2173,22 @@
       var url = SERVICE + '/splice';
       if (project) url = SERVICE + '/projects/' + encodeURIComponent(project.slug) + '/export';
       else body.pdf = pdfBase64;
-      var res = await fetch(url, {
-        method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body)
-      });
+      var res;
+      try {
+        res = await fetch(url, {
+          method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body)
+        });
+      } catch (err) {
+        // A phone suspends a backgrounded tab, and the request dies with it — but the sidecar
+        // finishes the splice and saves the file regardless. Go and look for it before asking
+        // the client to sit through the same forty seconds again. The ticker has to stop first,
+        // or it overwrites whatever the recovery reports.
+        clearInterval(tick);
+        if (project && await adoptFinishedExport(t0)) return;
+        status('export lost: ' + (err && err.message ? err.message : 'the request failed') +
+               ' — the file may still arrive in the project');
+        return;
+      }
       if (!res.ok) { done('export failed: ' + (await res.text()).slice(0, 120)); return; }
       var refused = res.headers.get('X-Edits-Refused');
       var applied = res.headers.get('X-Edits-Applied');

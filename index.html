@@ -295,8 +295,10 @@
 <script src="src/design.js"></script>
 <script src="src/planner.js"></script>
 <script src="src/pdf.js"></script>
-<script src="src/lines.js"></script>
-<script src="src/canvas.js"></script>
+<!-- bump both when either changes: without a query the browser keeps the old file and a
+     fixed bug looks unfixed -->
+<script src="src/lines.js?v=201"></script>
+<script src="src/canvas.js?v=201"></script>
 <script>
 const PT = 72;
 const state = { menu: null, lay: null, sel: null, zoom: 1, zoomScale: 1 };

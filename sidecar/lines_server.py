@@ -111,6 +111,9 @@ class Handler(BaseHTTPRequestHandler):
                     pdf = workspace.original(slug)
                     self._send(200, pdf, "application/pdf")
                     return
+                if len(parts) == 3 and parts[2] == "exports":
+                    self._json(200, {"exports": workspace.list_exports(slug)})
+                    return
                 if len(parts) == 4 and parts[2] == "exports":
                     # A phone downloads a blob badly (iOS opens it as a stray tab), so the
                     # export is also a real file behind a URL. Name is whitelisted: no paths.

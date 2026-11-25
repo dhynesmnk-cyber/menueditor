@@ -352,6 +352,26 @@ def save_export(slug, pdf_bytes):
     return name
 
 
+def list_exports(slug):
+    """What this project has exported, newest first. A phone that backgrounds during a
+    40-second export can come back and find the file instead of re-running it."""
+    d = os.path.join(_dir(slug), "exports")
+    if not os.path.isdir(d):
+        return []
+    out = []
+    for f in os.listdir(d):
+        if not f.endswith(".pdf"):
+            continue
+        p = os.path.join(d, f)
+        try:
+            st = os.stat(p)
+        except OSError:
+            continue
+        out.append({"name": f, "bytes": st.st_size, "mtime": st.st_mtime})
+    out.sort(key=lambda e: e["mtime"], reverse=True)
+    return out
+
+
 # ── fonts ─────────────────────────────────────────────────────────────────────
 DEFAULT_MANIFEST = {
     "version": 1,
