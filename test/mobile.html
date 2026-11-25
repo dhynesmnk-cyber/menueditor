@@ -86,7 +86,7 @@ async function runSize(size, slug) {
                         fonts: j.fonts || [] }, work: {}, manifest: j.manifest });
   await sleep(800);
 
-  const lines = doc.querySelectorAll('.cv-line');
+  let lines = doc.querySelectorAll('.cv-line');
   check(tag, 'canvas: every line is on the stage', lines.length === j.lines.pages[0].objects.length,
         lines.length + ' of ' + j.lines.pages[0].objects.length);
   check(tag, 'canvas: no sideways scroll', de.scrollWidth <= win.innerWidth + 1,
@@ -97,7 +97,10 @@ async function runSize(size, slug) {
     .filter(b => b.getBoundingClientRect().width > 0 && getComputedStyle(b).display !== 'none');
   const small = barBtns.filter(b => b.getBoundingClientRect().height < 44).map(b => b.textContent.trim());
   if (w <= 900) {
-    check(tag, 'bar: one row', bar.height <= 72, Math.round(bar.height));
+    const tops = barBtns.map(b => Math.round(b.getBoundingClientRect().top));
+    check(tag, 'bar: one row of controls', Math.max.apply(null, tops) - Math.min.apply(null, tops) <= 2,
+          tops.join(','));
+    check(tag, 'bar: two rows at most', bar.height <= 104, Math.round(bar.height));
     check(tag, 'bar: every target >= 44px', small.length === 0, small.join(','));
     // a long status line must not squeeze Export into "Expo"
     const clipped = barBtns.filter(b => b.scrollWidth > b.clientWidth + 1)
@@ -170,9 +173,37 @@ async function runSize(size, slug) {
       check(tag, 'drawer: a too-long title says so before Done',
             !!fit && /too long/.test(fit.textContent) && fit.classList.contains('bad'),
             fit && fit.textContent);
+      const barMsg = doc.querySelector('[data-role=status]');
+      check(tag, 'bar: the status stays whole while a drawer is open',
+            barMsg.getBoundingClientRect().width === 0 ||
+            barMsg.scrollWidth <= barMsg.clientWidth + 1,
+            '"' + barMsg.textContent + '" ' + barMsg.scrollWidth + '>' + barMsg.clientWidth);
       check(tag, 'drawer: the too-long preview is marked on the page',
             target.querySelector('.live').classList.contains('toowide') ||
             inp.classList.contains('toowide'));
+
+      // a finger cannot place a line to the point, so the drawer steps it
+      const posBefore = drawer.querySelector('.dr-pos').textContent;
+      const nudges = drawer.querySelectorAll('.dr-nudge');
+      check(tag, 'move: four 44px nudge buttons', nudges.length === 4 &&
+            [...nudges].every(b => b.getBoundingClientRect().height >= 44),
+            [...nudges].map(b => Math.round(b.getBoundingClientRect().height)).join(','));
+      const t0 = target.getAttribute('transform');
+      nudges[3].click();                    // right, once
+      nudges[3].click();                    // right again: 2pt in one undo step
+      await sleep(200);
+      const t1 = target.getAttribute('transform');
+      check(tag, 'move: two taps move the line 2pt', !!t1 && t1 !== t0 &&
+            /translate\(2(\.0+)? /.test(t1), (t0 || 'none') + ' -> ' + (t1 || 'none'));
+      check(tag, 'move: the drawer shows the new position',
+            drawer.querySelector('.dr-pos').textContent !== posBefore,
+            posBefore + ' -> ' + drawer.querySelector('.dr-pos').textContent);
+      nudges[1].click();                    // up: applied, or refused with a reason
+      await sleep(150);
+      const tUp = target.getAttribute('transform') || '';
+      const why = doc.querySelector('[data-role=status]').textContent;
+      check(tag, 'move: a refused step says why', /translate\(2(\.0+)? -1/.test(tUp) || /cannot move/.test(why),
+            tUp + ' | ' + why);
 
       // a keyboard is a visual viewport change, not a window resize
       fakeVV.height = 380;
@@ -207,6 +238,37 @@ async function runSize(size, slug) {
       });
     }
   }
+
+  // ---- pages: duplicate, delete (armed), undo -------------------------
+  const stages = () => doc.querySelectorAll('.cv-stage').length;
+  const pages0 = stages();
+  doc.querySelector('[data-role=pgdup]').click();
+  await sleep(500);
+  check(tag, 'pages: Duplicate adds a sheet', stages() === pages0 + 1, pages0 + ' -> ' + stages());
+
+  // one tap must not be enough to lose a sheet
+  const del = doc.querySelector('[data-role=pgdel]');
+  del.click();
+  await sleep(250);
+  check(tag, 'pages: Delete page asks first', stages() === pages0 + 1 &&
+        /\?$/.test(del.textContent.trim()) && del.classList.contains('armed'), del.textContent.trim());
+  del.click();
+  await sleep(600);
+  check(tag, 'pages: a second tap deletes', stages() === pages0, pages0 + ' -> ' + stages());
+
+  // and the deletion has to be undoable: the sheet list is rebuilt from the original
+  doc.querySelector('[data-role=undo]').click();
+  await sleep(600);
+  check(tag, 'pages: undo brings the sheet back', stages() === pages0 + 1, 'now ' + stages());
+  doc.querySelector('[data-role=undo]').click();
+  await sleep(600);
+  check(tag, 'pages: undo also undoes the duplicate', stages() === pages0, 'now ' + stages());
+  if (win.MenuCanvas && win.MenuCanvas.current && win.MenuCanvas.current.saveWork) {
+    win.MenuCanvas.current.saveWork();       // flush, so the next size starts clean
+    await sleep(400);
+  }
+  // undoing a page op rebuilds the stages, so the nodes captured above are detached now
+  lines = doc.querySelectorAll('.cv-line');
 
   // ---- the grip -------------------------------------------------------
   tap(win, lines[9]);

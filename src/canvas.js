@@ -55,6 +55,8 @@
       '.cv-btn{font:inherit;padding:5px 11px;border:1px solid #c9d2e0;background:#ffffff;border-radius:6px;cursor:pointer}',
       '.cv-btn.primary{background:#2f6fed;border-color:#2f6fed;color:#fff}',
       '.cv-btn:disabled{opacity:.5;cursor:default}',
+      // an armed destructive button has to look armed, not like a typo in the label
+      '.cv-btn.armed{background:#b3261e;border-color:#b3261e;color:#fff}',
       '.cv-stage{position:relative;margin:0;box-shadow:0 2px 18px rgba(0,0,0,.14);background:#fff}',
       '.cv-stage svg{display:block;width:100%;height:100%}',
       '.cv-pages{display:flex;flex-direction:column;align-items:center;gap:18px;',
@@ -127,11 +129,15 @@
       // Same breakpoint as the studio page: a 768px tablet in portrait is a touch screen,
       // and it was getting the desktop bar (three wrapped rows) with none of the room.
       '@media (max-width:900px){',
-      '  .cv-bar{flex-wrap:nowrap;gap:6px;padding:max(6px,env(safe-area-inset-top)) 10px 6px;overflow:hidden}',
+      '  .cv-bar{flex-wrap:wrap;gap:6px;padding:max(6px,env(safe-area-inset-top)) 10px 6px;overflow:hidden}',
+      // The buttons are one row; the status gets its own line. Squeezed into the strip beside
+      // five 44px buttons it was 18px wide — "no changes" rendered as a single letter.
+      '  .cv-bar .sp{display:none}',
       // the buttons keep their size; the status is what gives way, or Export loses its label
       '  .cv-bar .cv-btn,.cv-bar .cv-more{flex:0 0 auto}',
       '  .cv-bar [data-role=pname]{display:none}',
-      '  .cv-bar [data-role=status]{flex:1 1 0;min-width:0;font-size:12px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}',
+      '  .cv-bar [data-role=status]{flex:1 1 100%;order:2;min-width:0;font-size:12.5px;line-height:1.3;' +
+      '    white-space:nowrap;overflow:hidden;text-overflow:ellipsis}',
       '  .cv-bar [data-role=export]{white-space:nowrap;padding:0 12px}',
       '  .pdfw{display:none}',
       '  .cv-bar .hint{display:none}',
@@ -166,8 +172,14 @@
       '.cv-drawer input.dr-text{width:100%;font-size:16px;padding:11px 12px;border:1px solid #c9d2e0;border-radius:8px}',
       '.cv-drawer .dr-fit{font-size:13px;color:#4b5a6b;margin-top:6px;min-height:18px}',
       '.cv-drawer .dr-fit.bad{color:#b3261e;font-weight:600}',
+      '.cv-drawer .dr-move{display:flex;gap:6px;align-items:center;margin-top:8px;flex-wrap:wrap}',
+      '.cv-drawer .dr-mlabel{color:#667485;font-size:13px;margin-right:2px}',
+      '.cv-drawer .dr-nudge{min-width:44px;min-height:44px;font-size:17px;line-height:1;' +
+      '  border:1px solid #c9d2e0;background:#fff;border-radius:8px;cursor:pointer}',
+      '.cv-drawer .dr-pos{margin-left:auto;font:12px/1 ui-monospace,monospace;color:#4b5a6b}',
       '.cv-drawer .dr-row{display:flex;gap:8px;align-items:center;margin-top:8px;flex-wrap:wrap}',
       '.cv-drawer .dr-row label{color:#667485;font-size:13px}',
+      '.cv-drawer .dr-row input[type=color]{flex:0 0 auto;width:46px;height:42px;padding:2px;border-radius:8px}',
       '.cv-drawer .dr-row select,.cv-drawer .dr-row input[type=number]{font-size:16px;min-height:42px;padding:6px 8px;',
       '  border:1px solid #c9d2e0;border-radius:8px;background:#fff}',
       '.cv-drawer .dr-row input[type=number]{width:78px}',
@@ -191,6 +203,9 @@
   function open(opts) {
     // opts: {data, pdfBase64?, project?, work?, onClose, onSwitch}
     var data = root.MenuLines.normalize(opts.data);
+    // A page operation is not a text edit: the pages themselves change shape, so an undo
+    // cannot reverse a splice reliably. Keep the document as it arrived and rebuild from it.
+    var pristinePages = data.pages.map(function (p) { return Object.assign({}, p); });
     var objects = data.objects;
     var project = opts.project || null;         // {slug, name, fonts:[{family,file}]}
     var pdfBase64 = opts.pdfBase64 || null;
@@ -507,6 +522,7 @@
 
     function addBlankPage() {
       if (!pageGuard()) return;
+      pushUndo();
       var sz = pageSize();
       data.pages.push({ index: data.pages.length, width: sz.width, height: sz.height,
                         objects: [], vectors: [], images: [], plate: null,
@@ -521,6 +537,7 @@
 
     function duplicatePage() {
       if (!pageGuard()) return;
+      pushUndo();
       var pno = curPage, src = data.pages[pno];
       if (!src) return;
       var idx = data.pages.length;
@@ -551,6 +568,7 @@
         status('a document needs at least one page');
         return;
       }
+      pushUndo();
       var pno = curPage, pg = data.pages[pno];
       pg.objects.forEach(function (o) { edits.delete(o.gi); deletes.delete(o.gi); });
       adds = adds.filter(function (a) { return a.page !== pno; });
@@ -630,8 +648,17 @@
     // ---- the bar: a sheet on a phone, one inline row on a desktop -----------
     var menuEl = overlay.querySelector('[data-role=menu]');
     var moreBtn = overlay.querySelector('[data-role=more]');
+    function disarmAll() {
+      Array.prototype.forEach.call(overlay.querySelectorAll('.cv-btn.armed'), function (b) {
+        clearTimeout(parseInt(b.dataset.armed, 10));
+        delete b.dataset.armed;
+        b.textContent = b.dataset.rest;
+        b.classList.remove('armed');
+      });
+    }
     function closeMenu() {
       if (!menuEl.classList.contains('on')) return;
+      disarmAll();          // an armed Delete must not survive the sheet closing
       menuEl.classList.remove('on');
       moreBtn.setAttribute('aria-expanded', 'false');
       moreBtn.textContent = 'More ▾';
@@ -646,7 +673,9 @@
     menuEl.addEventListener('click', function (ev) {
       var b = ev.target.closest('button');
       if (!b) return;
-      if (!/^(zin|zout|zlabel|pgprev|pgnext)$/.test(b.dataset.role || '')) closeMenu();
+      // two-step actions keep the sheet open between taps; zoom and paging are repeatable
+      if (/^(pgdel|clear|zin|zout|zlabel|pgprev|pgnext)$/.test(b.dataset.role || '')) return;
+      closeMenu();
     });
     overlay.querySelector('[data-role=undo]').addEventListener('click', function () { hideGrip(); undo(); });
     overlay.querySelector('[data-role=redo]').addEventListener('click', function () { hideGrip(); redo(); });
@@ -663,8 +692,13 @@
       goPage(curPage + 1);
     });
     overlay.querySelector('[data-role=pgdup]').addEventListener('click', duplicatePage);
+    // (duplicate is undoable and harmless; delete is not allowed to be a single tap)
     overlay.querySelector('[data-role=pgadd]').addEventListener('click', addBlankPage);
-    overlay.querySelector('[data-role=pgdel]').addEventListener('click', deletePage);
+    overlay.querySelector('[data-role=pgdel]').addEventListener('click', function () {
+      var btn = this;
+      if (btn.disabled) return;
+      armButton(btn, 'Delete page?', 'tap Delete page again to remove this sheet', deletePage);
+    });
     overlay.querySelector('[data-role=pages]').addEventListener('click', function (ev) {
       // clicking a sheet on the stage makes it the page the controls act on
       var st = ev.target.closest('.cv-stage');
@@ -707,6 +741,30 @@
     var saveTimer = null, saving = false;
 
     function status(msg) { statusEl.textContent = msg; }
+
+    // Destructive, not undoable by a label: a second tap within three seconds confirms.
+    // A phone tap misses by 48px and lands on the neighbour, which used to mean a lost page.
+    function armButton(btn, armedLabel, note, fn) {
+      if (btn.dataset.armed) {
+        clearTimeout(parseInt(btn.dataset.armed, 10));
+        delete btn.dataset.armed;
+        btn.textContent = btn.dataset.rest;
+        btn.classList.remove('armed');
+        fn();
+        closeMenu();
+        return;
+      }
+      btn.dataset.rest = btn.dataset.rest || btn.textContent;
+      btn.textContent = armedLabel;
+      btn.classList.add('armed');
+      status(note);
+      btn.dataset.armed = String(setTimeout(function () {
+        btn.textContent = btn.dataset.rest;
+        btn.classList.remove('armed');
+        delete btn.dataset.armed;
+        countStatus();
+      }, 3000));
+    }
     function countStatus() {
       var n = edits.size + imageEdits.size + adds.length + deletes.size;
       var bits = [];
@@ -797,10 +855,25 @@
 
     function snapshot() {
       return JSON.stringify({ edits: Array.from(edits), images: Array.from(imageEdits),
-                              adds: adds, deletes: Array.from(deletes) });
+                              adds: adds, deletes: Array.from(deletes),
+                              pages: { new: pageOps.new, delete: pageOps.delete }, cur: curPage });
+    }
+    // Rebuild the sheet list from the original document plus a set of operations. Replaying
+    // is the only honest way back: deletePage() splices and renumbers, so there is nothing
+    // to un-splice.
+    function restorePages(ops, cur) {
+      data.pages = pristinePages.map(function (p) { return Object.assign({}, p); });
+      pageOps = { new: [], delete: [] };
+      if ((ops.new || []).length || (ops.delete || []).length) applySavedPageOps(ops);
+      rebuildStages();
+      curPage = Math.max(0, Math.min(cur === undefined || cur === null ? curPage : cur,
+                                     data.pages.length - 1));
+      goPage(curPage);
     }
     function applySnapshot(json) {
       var snap = JSON.parse(json);
+      // pages first: adds carry page indices, and they have to land on a rebuilt list
+      if (snap.pages) restorePages(snap.pages, snap.cur);
       edits.clear();
       (snap.edits || []).forEach(function (p) { edits.set(p[0], p[1]); });
       imageEdits.clear();
@@ -1237,8 +1310,12 @@
       status('text box updated');
     }
 
-    function setEdit(i, patch) {
-      pushUndo();
+    var lastPush = { at: 0, key: '' };
+    function setEdit(i, patch, coalesceKey) {
+      // a run of nudges is one change to undo; anything else starts its own entry
+      var now = Date.now();
+      if (!coalesceKey || coalesceKey !== lastPush.key || now - lastPush.at > 1200) pushUndo();
+      lastPush = { at: now, key: coalesceKey || '' };
       root.MenuLines.applyEdit(edits, objects, i, patch);
       renderLine(i);
       persist();
@@ -1318,6 +1395,13 @@
         '<input class="dr-text" value="' + esc(v.text) + '" autocapitalize="sentences" ' +
         'autocorrect="off" spellcheck="false">' +
         '<div class="dr-fit" aria-live="polite"></div>' +
+        '<div class="dr-move"><span class="dr-mlabel">move</span>' +
+        '<button class="dr-nudge" type="button" data-dx="-1" data-dy="0" aria-label="move left by a point">←</button>' +
+        '<button class="dr-nudge" type="button" data-dx="0" data-dy="-1" aria-label="move up by a point">↑</button>' +
+        '<button class="dr-nudge" type="button" data-dx="0" data-dy="1" aria-label="move down by a point">↓</button>' +
+        '<button class="dr-nudge" type="button" data-dx="1" data-dy="0" aria-label="move right by a point">→</button>' +
+        '<span class="dr-pos" aria-live="polite">' + v.x.toFixed(1) + ', ' + v.y.toFixed(1) + ' pt</span>' +
+        '</div>' +
         styleControls(v, restyle) +
         '<div class="dr-actions"><button class="dr-cancel" type="button">Cancel</button>' +
         '<button class="dr-done" type="button">Done</button></div>');
@@ -1342,6 +1426,13 @@
       };
       var csel = d.querySelector('.dr-color');
       if (csel) csel.oninput = function (ev) { editing.color = ev.target.value; applyLive(); };
+      Array.prototype.forEach.call(d.querySelectorAll('.dr-nudge'), function (b) {
+        b.onclick = function () {
+          if (!editing) return;
+          moveSelected(parseFloat(b.dataset.dx), parseFloat(b.dataset.dy));
+          hideGrip();          // the line moved; the grip is where it used to be
+        };
+      });
       d.querySelector('.dr-done').onclick = function () { commitEdit(); };
       d.querySelector('.dr-cancel').onclick = function () { cancelEdit(); };
       inp.focus();
@@ -1452,7 +1543,12 @@
               ? 'fitted ' + Math.round(100 * res.size / editing.size) + '% to fit the slot'
               : 'fits the slot (' + res.w.toFixed(0) + ' of ' + res.max.toFixed(0) + ' pt)');
       }
-      if (!res.fits) {
+      // On a phone the bar is a strip: a long sentence there collapses to "f…" beside the
+      // buttons, and the drawer has already said the number. Say it short, keep it whole.
+      if (editing.drawer) {
+        status(!res.fits ? 'too long' : (res.size < editing.size - 0.01
+          ? 'fitted ' + Math.round(100 * res.size / editing.size) + '%' : 'fits'));
+      } else if (!res.fits) {
         status('too long — needs ' + res.w.toFixed(0) + 'pt, slot is ' + res.max.toFixed(0) +
                'pt (Shift+Enter to squeeze)');
       } else if (res.size < editing.size - 0.01) {
@@ -1522,6 +1618,34 @@
     // scroll — which used to leave a half-finished move behind. So a tap selects, and the
     // move happens from the grip that appears above the selected thing.
     var gripTarget = null;        // {kind:'line'|'add', ref, el}
+
+    // A finger cannot place a line to the point: at fit-width on a phone the scale is about
+    // 0.3, so one point is a third of a pixel. The drawer steps the selected line by a point,
+    // through the same clash guard a drag uses, and says where it landed.
+    function moveSelected(dx, dy) {
+      if (!editing || editing.kind !== 'line') return 'nothing selected';
+      var i = editing.i;
+      if (isLocked(i)) { status('that line is locked by the designer'); return 'locked'; }
+      var o = objects[i], v = root.MenuLines.effective(objects, edits, i);
+      var view = null;
+      for (var k = 0; k < views.length; k++) if (views[k].index === o.page) view = views[k];
+      if (!view) { status('that page is not on screen'); return 'no view'; }
+      var size = editing.sizeUsed || v.size;
+      var meas = measureFor(i, editing.font);
+      var w = editing.inp ? (meas(editing.inp.value, size, editing.track) || widthOfEdit(i))
+                          : widthOfEdit(i);
+      var nx = Math.round((v.x + dx) * 1000) / 1000;
+      var ny = Math.round((v.y + dy) * 1000) / 1000;
+      var why = root.MenuLines.dropClash({ objects: objects, vectors: view.vectors,
+        page: view.page, edits: edits, i: i, x: nx, y: ny, size: size, width: w,
+        widthOf: widthOfEdit });
+      if (why) { status('cannot move: ' + why); return why; }
+      setEdit(i, { x: nx, y: ny }, 'nudge:' + i);
+      applyLive();          // the pending text only lived in the field; redraw it in place
+      var pos = editing.drawer && editing.drawer.querySelector('.dr-pos');
+      if (pos) pos.textContent = nx.toFixed(1) + ', ' + ny.toFixed(1) + ' pt';
+      return null;
+    }
 
     function pinchState() {
       var pts = Array.from(pointers.values());
@@ -1781,21 +1905,24 @@
       applyLive();
     });
     overlay.querySelector('[data-role=clear]').addEventListener('click', function () {
+      var btn = this;
       hideGrip();
       if (!edits.size && !imageEdits.size && !adds.length && !deletes.size) {
         status('nothing to clear'); return;
       }
-      pushUndo();
-      edits.clear();
-      imageEdits.clear();
-      adds = [];
-      deletes = new Set();
-      selectAdd(null);
-      objects.forEach(function (o, i) { renderLine(i); });
-      renderAdds();
-      Array.from(imageSlots.keys()).forEach(renderImage);
-      persist();
-      countStatus();
+      armButton(btn, 'Clear all?', 'tap Clear again to discard every change', function () {
+        pushUndo();
+        edits.clear();
+        imageEdits.clear();
+        adds = [];
+        deletes = new Set();
+        selectAdd(null);
+        objects.forEach(function (o, i) { renderLine(i); });
+        renderAdds();
+        Array.from(imageSlots.keys()).forEach(renderImage);
+        persist();
+        countStatus();
+      });
     });
     overlay.querySelector('[data-role=close]').addEventListener('click', function () {
       if (editing) commitEdit();
